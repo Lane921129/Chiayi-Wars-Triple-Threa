@@ -8,6 +8,8 @@ class MapMultiFab extends StatefulWidget {
   final VoidCallback onRoute;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
+  final VoidCallback onToggleLayer;
+  final bool showFactionLayer;
   final bool isRouteRecording;
   final bool showBus;
   final Color factionColor;
@@ -23,6 +25,8 @@ class MapMultiFab extends StatefulWidget {
     required this.onRoute,
     required this.onZoomIn,
     required this.onZoomOut,
+    required this.onToggleLayer,
+    required this.showFactionLayer,
     required this.isRouteRecording,
     required this.showBus,
     required this.factionColor,
@@ -99,7 +103,7 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
         return Transform.translate(
           offset: Offset(0, dy * (1 - _expandAnimation.value)),
           child: Opacity(
-            opacity: _expandAnimation.value,
+            opacity: _expandAnimation.value.clamp(0.0, 1.0),
             child: child,
           ),
         );
@@ -135,7 +139,17 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        // 放大按鈕 (最頂端)
+        // 勢力圖層開關 (最頂端)
+        _buildItem(
+          widget.showFactionLayer ? Icons.layers : Icons.layers_outlined, 
+          'map_layer', 
+          widget.showFactionLayer ? Colors.orangeAccent : FactionColors.cardBg, 
+          405, 
+          widget.onToggleLayer, 
+          iconColor: widget.showFactionLayer ? Colors.white : widget.factionColor
+        ),
+
+        // 放大按鈕
         _buildItem(
           Icons.add, 
           'map_zoom_in', 
@@ -192,7 +206,7 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
             return Transform.translate(
               offset: Offset(0, 75 * (1 - _expandAnimation.value)),
               child: Opacity(
-                opacity: _expandAnimation.value,
+                opacity: _expandAnimation.value.clamp(0.0, 1.0),
                 child: child,
               ),
             );

@@ -72,7 +72,7 @@ class _MultiFabState extends State<MultiFab> with SingleTickerProviderStateMixin
         return Transform.translate(
           offset: Offset(0, dy * (1 - _expandAnimation.value)),
           child: Opacity(
-            opacity: _expandAnimation.value,
+            opacity: _expandAnimation.value.clamp(0.0, 1.0),
             child: child,
           ),
         );

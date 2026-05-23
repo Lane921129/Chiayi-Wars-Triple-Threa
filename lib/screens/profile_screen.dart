@@ -6,6 +6,7 @@ import '../theme/theme_provider.dart';
 import '../services/map_cache_service.dart';
 import 'performance_screen.dart';
 import 'api_key_screen.dart';
+import '../services/seed_service.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -135,6 +136,32 @@ class ProfileScreen extends StatelessWidget {
                         );
                       },
                     ),
+                    // 開發人員模式
+                    ListTile(
+                      leading: Icon(Icons.developer_mode, color: isDarkMode ? FactionColors.textPrimary : Colors.black87),
+                      title: Text('開發人員模式', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                      trailing: Switch(
+                        value: themeProvider.isDeveloperMode,
+                        activeThumbColor: Colors.greenAccent,
+                        onChanged: (val) {
+                          themeProvider.setDeveloperMode(val);
+                        },
+                      ),
+                    ),
+
+                    // 測試資料上傳 (僅開發人員模式可見)
+                    if (themeProvider.isDeveloperMode)
+                      ListTile(
+                        leading: const Icon(Icons.data_array, color: Colors.greenAccent),
+                        title: const Text('上傳測試資料 (種子)', style: TextStyle(color: Colors.greenAccent)),
+                        onTap: () async {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('正在上傳測試資料...')));
+                          await SeedService.seedMissions();
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('測試資料上傳成功！請查看地圖圖層變化')));
+                        },
+                      ),
+
                     const Divider(color: Colors.grey),
 
                     // 績效與跑圖紀錄
