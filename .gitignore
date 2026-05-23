@@ -43,3 +43,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firebase sensitive config files (regenerate via FlutterFire CLI or Firebase Console)
+# Keep: firebase_options.dart (community standard, protected by Security Rules)
+# Sensitive: native platform files with API keys
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+
+# Firebase Admin SDK service account key (NEVER commit this!)
+scripts/serviceAccountKey.json
+
+# Firestore backup data (can be large, regenerate via backup_firestore.js)
+data/backup_*/

@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import 'faction_select_screen.dart';
 
@@ -22,54 +23,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   // 嘉義市中心座標
   static const LatLng _chiayi = LatLng(23.4800, 120.4491);
 
-  // 假資料：任務地點
-  final List<Map<String, dynamic>> _missions = [
-    {
-      'id': 'm1',
-      'name': '嘉義舊監獄',
-      'category': 'heritage',
-      'lat': 23.4812,
-      'lng': 120.4508,
-      'basePoints': 150,
-      'emoji': '🏛️',
-    },
-    {
-      'id': 'm2',
-      'name': '文化路夜市',
-      'category': 'food',
-      'lat': 23.4789,
-      'lng': 120.4418,
-      'basePoints': 100,
-      'emoji': '🍜',
-    },
-    {
-      'id': 'm3',
-      'name': '阿里山咖啡小棧',
-      'category': 'cafe',
-      'lat': 23.4765,
-      'lng': 120.4432,
-      'basePoints': 120,
-      'emoji': '☕',
-    },
-    {
-      'id': 'm4',
-      'name': '嘉義城隍廟',
-      'category': 'heritage',
-      'lat': 23.4800,
-      'lng': 120.4480,
-      'basePoints': 130,
-      'emoji': '⛩️',
-    },
-    {
-      'id': 'm5',
-      'name': '噴水圓環',
-      'category': 'food',
-      'lat': 23.4778,
-      'lng': 120.4461,
-      'basePoints': 90,
-      'emoji': '🎪',
-    },
-  ];
+  // Firebase Firestore instance
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override
   void initState() {
@@ -136,51 +91,99 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 },
               ),
 
-              // 任務 Markers
-              MarkerLayer(
-                markers: _missions.map((m) {
-                  final color = _categoryColor(m['category'] as String);
-                  return Marker(
-                    point: LatLng(m['lat'] as double, m['lng'] as double),
-                    width: 56,
-                    height: 70,
-                    child: GestureDetector(
-                      onTap: () => _showMissionSheet(m),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 46,
-                            height: 46,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2.5),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: color.withValues(alpha: 0.55),
-                                  blurRadius: 10,
-                                  spreadRadius: 2,
+              // 即時監聽 Firestore Missions
+              StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('missions')
+                    .where('status', isEqualTo: 'active')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const SizedBox.shrink();
+
+                  final docs = snapshot.data!.docs;
+                  
+                  // 1. 領地控制圓圈 (CircleLayer)
+                  final circles = docs.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final color = _categoryColor(data['category'] ?? '');
+                    // 根據打卡次數決定圓圈大小，基礎 50m，每次打卡 +5m，上限 300m
+                    final checkIns = data['totalCheckIns'] ?? 0;
+                    final radius = (50.0 + (checkIns * 5)).clamp(50.0, 300.0);
+                    
+                    return CircleMarker(
+                      point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
+                      radius: radius,
+                      useRadiusInMeter: true,
+                      color: color.withValues(alpha: 0.25),
+                      borderColor: color.withValues(alpha: 0.8),
+                      borderStrokeWidth: 2,
+                    );
+                  }).toList();
+
+                  // 2. 任務點地標 (MarkerLayer)
+                  final markers = docs.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final color = _categoryColor(data['category'] ?? '');
+                    
+                    // 決定 Emoji
+                    String emoji = '📍';
+                    if (data['category'] == 'heritage') emoji = '🏛️';
+                    if (data['category'] == 'food') emoji = '🍜';
+                    if (data['category'] == 'cafe') emoji = '☕';
+                    
+                    return Marker(
+                      point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
+                      width: 56,
+                      height: 70,
+                      child: GestureDetector(
+                        onTap: () {
+                          data['id'] = doc.id; // 帶入 ID
+                          data['emoji'] = emoji;
+                          _showMissionSheet(data);
+                        },
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 46,
+                              height: 46,
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2.5),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: color.withValues(alpha: 0.55),
+                                    blurRadius: 10,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  emoji,
+                                  style: const TextStyle(fontSize: 22),
                                 ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Text(
-                                m['emoji'] as String,
-                                style: const TextStyle(fontSize: 22),
                               ),
                             ),
-                          ),
-                          // 箭頭
-                          CustomPaint(
-                            size: const Size(14, 8),
-                            painter: _MarkerArrow(color: color),
-                          ),
-                        ],
+                            // 箭頭
+                            CustomPaint(
+                              size: const Size(14, 8),
+                              painter: _MarkerArrow(color: color),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                    );
+                  }).toList();
+
+                  return Stack(
+                    children: [
+                      CircleLayer(circles: circles),
+                      MarkerLayer(markers: markers),
+                    ],
                   );
-                }).toList(),
+                },
               ),
             ],
           ),
@@ -454,56 +457,84 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _missions.length,
-              itemBuilder: (_, i) {
-                final m = _missions[i];
-                final color = _categoryColor(m['category'] as String);
-                return GestureDetector(
-                  onTap: () => _showMissionSheet(m),
-                  child: Container(
-                    width: 150,
-                    margin: const EdgeInsets.only(right: 10),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                          color: color.withValues(alpha: 0.3)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(m['emoji'] as String,
-                            style: const TextStyle(fontSize: 22)),
-                        Text(
-                          m['name'] as String,
-                          style: const TextStyle(
-                            color: FactionColors.textPrimary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _firestore
+                  .collection('missions')
+                  .where('status', isEqualTo: 'active')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final docs = snapshot.data!.docs;
+                if (docs.isEmpty) {
+                  return const Center(
+                    child: Text('目前沒有可接取的任務', style: TextStyle(color: Colors.white54)),
+                  );
+                }
+
+                return ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: docs.length,
+                  itemBuilder: (_, i) {
+                    final data = docs[i].data() as Map<String, dynamic>;
+                    final color = _categoryColor(data['category'] ?? '');
+                    
+                    String emoji = '📍';
+                    if (data['category'] == 'heritage') emoji = '🏛️';
+                    if (data['category'] == 'food') emoji = '🍜';
+                    if (data['category'] == 'cafe') emoji = '☕';
+
+                    return GestureDetector(
+                      onTap: () {
+                        data['id'] = docs[i].id;
+                        data['emoji'] = emoji;
+                        _showMissionSheet(data);
+                      },
+                      child: Container(
+                        width: 150,
+                        margin: const EdgeInsets.only(right: 10),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                              color: color.withValues(alpha: 0.3)),
                         ),
-                        Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Icon(Icons.star,
-                                color: FactionColors.gold, size: 13),
-                            const SizedBox(width: 3),
-                            Text('+${m['basePoints']}',
-                                style: const TextStyle(
-                                    color: FactionColors.gold,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold)),
+                            Text(emoji, style: const TextStyle(fontSize: 22)),
+                            Text(
+                              data['name'] ?? '',
+                              style: const TextStyle(
+                                color: FactionColors.textPrimary,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Row(
+                              children: [
+                                const Icon(Icons.star,
+                                    color: FactionColors.gold, size: 13),
+                                const SizedBox(width: 3),
+                                Text('+${data['basePoints']}',
+                                    style: const TextStyle(
+                                        color: FactionColors.gold,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold)),
+                              ],
+                            ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
+                    );
+                  },
                 );
               },
             ),

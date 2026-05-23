@@ -24,7 +24,8 @@ class AuthService {
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
       final credential = GoogleAuthProvider.credential(idToken: googleAuth.idToken);
 
-      await FirebaseAuth.instance.signInWithCredential(credential);
+      final UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      await _syncUserData(userCredential.user);
       return true; //  成功登入，回傳 true
     } catch (error) {
       print("Google 登入失敗: $error");

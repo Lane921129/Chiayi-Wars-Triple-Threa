@@ -1,0 +1,15 @@
+{
+  "name": "zhuluo-scripts",
+  "version": "1.0.0",
+  "description": "探索諸羅：三國爭霸 — Firebase 管理腳本",
+  "scripts": {
+    "upload:missions": "node upload_missions.js",
+    "upload:stores": "node upload_stores.js",
+    "upload:all": "node upload_missions.js && node upload_stores.js",
+    "backup": "node backup_firestore.js",
+    "restore": "node restore_firestore.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}
