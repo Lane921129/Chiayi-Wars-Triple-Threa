@@ -41,13 +41,17 @@ class MapCacheService extends ChangeNotifier {
       // 確保 Store 存在
       await store.manage.create();
 
-      // 計算總瓦片數 (針對 Zoom Level 13~17)
-      final count = await store.download.countTiles(
-        region: _chiayiRegion.toDownloadable(
-          minZoom: 13,
-          maxZoom: 17,
-        )
+      final downloadableRegion = _chiayiRegion.toDownloadable(
+        minZoom: 13,
+        maxZoom: 17,
+        options: TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.zhuluo_app',
+        ),
       );
+
+      // 計算總瓦片數 (針對 Zoom Level 13~17)
+      final count = await store.download.countTiles(downloadableRegion);
       _totalTilesToDownload = count;
       notifyListeners();
 
@@ -58,16 +62,13 @@ class MapCacheService extends ChangeNotifier {
       }
 
       // 開始下載
-      final (_, progress) = store.download.startForeground(
-        region: _chiayiRegion.toDownloadable(
-          minZoom: 13,
-          maxZoom: 17,
-        ),
+      final (:downloadProgress, :tileEvents) = store.download.startForeground(
+        region: downloadableRegion,
         parallelThreads: 2, // 限速：最多 2 個併發請求，保護免費伺服器
       );
 
-      progress.listen((prog) {
-        _downloadedTiles = prog.successfulTiles;
+      downloadProgress.listen((prog) {
+        _downloadedTiles = prog.successfulTilesCount;
         notifyListeners();
       }, onDone: () {
         _isDownloading = false;
@@ -85,15 +86,29 @@ class MapCacheService extends ChangeNotifier {
     }
   }
 
-  // 取得目前 Store 的統計資訊 (快取了多少圖磚、佔用多少空間)
+  // 取得目前 Store 的統計資訊
   Future<Map<String, dynamic>> getStoreStats() async {
     final store = _store;
     if (!await store.manage.ready) return {'count': 0, 'size': 0};
     
     final stats = await store.stats.all;
     return {
-      'count': stats.storeLength,
-      'size': stats.storeSize, // bytes
+      'count': stats.length,
+      'size': stats.size, // bytes
     };
+  }
+
+  // 清除快取 (刪除 Store 後重建)
+  Future<void> clearCache() async {
+    try {
+      final store = _store;
+      await store.manage.delete();
+      await store.manage.create();
+      _downloadedTiles = 0;
+      _totalTilesToDownload = 0;
+      notifyListeners();
+    } catch (e) {
+      print("Error clearing cache: $e");
+    }
   }
 }

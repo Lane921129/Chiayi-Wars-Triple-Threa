@@ -241,9 +241,20 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(color: isDarkMode ? Colors.white54 : Colors.black54, fontSize: 12)),
                 trailing: mapCache.isDownloading 
                     ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                    : IconButton(
-                        icon: const Icon(Icons.cloud_download, color: FactionColors.gold),
-                        onPressed: () => mapCache.startDownload(),
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                            onPressed: () => mapCache.clearCache(),
+                            tooltip: '清除快取',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.cloud_download, color: FactionColors.gold),
+                            onPressed: () => mapCache.startDownload(),
+                            tooltip: '開始下載',
+                          ),
+                        ],
                       ),
               );
             },
