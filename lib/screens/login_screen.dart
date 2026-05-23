@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../theme/app_theme.dart';
+import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -101,20 +102,10 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _signInWithGoogle() async {
     setState(() => _isLoading = true);
-    try {
-      await GoogleSignIn.instance.initialize(
-        serverClientId:
-            "1041151177820-rnpe45gb6h7buu8isfvtjp5ihnbk0q6v.apps.googleusercontent.com",
-      );
-      final GoogleSignInAccount googleUser =
-          await GoogleSignIn.instance.authenticate();
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      final credential =
-          GoogleAuthProvider.credential(idToken: googleAuth.idToken);
-      await FirebaseAuth.instance.signInWithCredential(credential);
+    final success = await AuthService().signInWithGoogle();
+    if (success) {
       if (mounted) _showSnack('🚀 Google 登入成功！歡迎主公回來！');
-    } catch (e) {
+    } else {
       if (mounted) {
         showDialog(
           context: context,
@@ -131,8 +122,8 @@ class _LoginScreenState extends State<LoginScreen>
                       color: FactionColors.textPrimary,
                       fontWeight: FontWeight.bold)),
             ]),
-            content: Text(e.toString(),
-                style: const TextStyle(
+            content: const Text('Google 登入失敗或被取消，請再試一次。',
+                style: TextStyle(
                     color: FactionColors.textSecondary, fontSize: 13)),
             actions: [
               TextButton(
@@ -143,21 +134,19 @@ class _LoginScreenState extends State<LoginScreen>
           ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
+    if (mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _signInAnonymously() async {
     setState(() => _isLoading = true);
-    try {
-      await FirebaseAuth.instance.signInAnonymously();
+    final success = await AuthService().signInAnonymously();
+    if (success) {
       if (mounted) _showSnack('🕵️ 以訪客身分悄悄入城！');
-    } catch (e) {
+    } else {
       if (mounted) _showSnack('訪客登入失敗，請稍後再試', isError: true);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
+    if (mounted) setState(() => _isLoading = false);
   }
 
   void _showSnack(String msg, {bool isError = false}) {

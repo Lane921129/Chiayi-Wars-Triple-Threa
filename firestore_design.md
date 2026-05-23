@@ -70,13 +70,13 @@ Firestore
 | `address` | string | 文字地址（輔助顯示）【新增】 |
 | `radiusMeters` | number | 打卡有效半徑（建議 100） |
 | `category` | string | `"food"` / `"heritage"` / `"cafe"` |
-| `factionBonus` | string | 對應陣營（red/green/blue），任務完成額外加分 |
 | `basePoints` | number | 完成任務的基礎積分 |
-| `bonusPoints` | number | 對應陣營的額外加分 |
+| `bonusPoints` | number | 額外加分（不再綁定單一陣營） |
 | `imageUrl` | string | 地點圖片 URL |
 | `status` | string | `"draft"` (草稿/等待AI發布) / `"active"` (已發布) |
 | `aiPublishConditions` | string | 給 AI 的發布條件提示（如：「假日發布」）|
-| `totalCheckIns` | number | 累計打卡次數（所有玩家），用於陣營領地計算【新增】 |
+| `totalCheckIns` | number | 累計總打卡次數 |
+| `checkInsByFaction` | map | 各陣營的打卡次數，用於決定領地勢力顏色（如 `{"red": 10, "green": 5, "blue": 2}`）【新增】 |
 | `createdAt` | timestamp | 建立時間【新增】 |
 | `createdBy` | string | 建立者 UID（管理員）【新增】 |
 

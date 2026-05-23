@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
+import 'home_screen.dart';
 
 /// 陣營選擇頁面
 /// 寫入 Firestore users_public/{userId}.faction
@@ -170,16 +173,31 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                       child: ElevatedButton(
                         onPressed: _selectedFaction == null
                             ? null
-                            : () {
-                                // TODO: 寫入 Firestore users_public/{uid}.faction
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        '${FactionColors.emojiForFaction(_selectedFaction!)} 已加入 ${FactionColors.nameForFaction(_selectedFaction!)}！'),
-                                    backgroundColor: FactionColors.forFaction(_selectedFaction!),
-                                  ),
-                                );
-                                Navigator.pop(context);
+                            : () async {
+                                final user = FirebaseAuth.instance.currentUser;
+                                if (user != null) {
+                                  await FirebaseFirestore.instance
+                                      .collection('users_public')
+                                      .doc(user.uid)
+                                      .update({
+                                    'faction': _selectedFaction,
+                                    'factionJoinedAt': FieldValue.serverTimestamp(),
+                                  });
+                                }
+
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          '${FactionColors.emojiForFaction(_selectedFaction!)} 已加入 ${FactionColors.nameForFaction(_selectedFaction!)}！'),
+                                      backgroundColor: FactionColors.forFaction(_selectedFaction!),
+                                    ),
+                                  );
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const HomeScreen()),
+                                  );
+                                }
                               },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _selectedFaction != null

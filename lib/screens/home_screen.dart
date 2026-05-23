@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import 'map_screen.dart';
@@ -18,12 +19,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   bool _isAdmin = false;
 
-  // 使用者假資料（正式版從 Firestore users_public 讀取）
-  final String _faction = 'red'; // red / green / blue
-  final int _totalScore = 3850;
-  final int _redScore = 2100;
-  final int _greenScore = 980;
-  final int _blueScore = 770;
+  // 即時讀取使用者資料
+  Map<String, dynamic> _userData = {
+    'faction': 'red',
+    'totalScore': 0,
+  };
 
   late final List<Widget> _screens;
 
@@ -46,66 +46,81 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final factionColor = FactionColors.forFaction(_faction);
-    final factionGlow = FactionColors.glowForFaction(_faction);
+    final user = _authService.currentUser;
+    if (user == null) {
+      return const Scaffold(body: Center(child: Text('未登入')));
+    }
 
-    return Scaffold(
-      backgroundColor: FactionColors.darkBg,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: FactionColors.cardBg,
-          border: Border(
-            top: BorderSide(
-              color: factionColor.withOpacity(0.4),
-              width: 1.5,
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('users_public').doc(user.uid).snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data!.exists) {
+          _userData = snapshot.data!.data() as Map<String, dynamic>;
+        }
+
+        final faction = _userData['faction'] as String? ?? 'red';
+        final factionColor = FactionColors.forFaction(faction);
+        final factionGlow = FactionColors.glowForFaction(faction);
+
+        return Scaffold(
+          backgroundColor: FactionColors.darkBg,
+          body: IndexedStack(
+            index: _currentIndex,
+            children: _screens,
+          ),
+          bottomNavigationBar: Container(
+            decoration: BoxDecoration(
+              color: FactionColors.cardBg,
+              border: Border(
+                top: BorderSide(
+                  color: factionColor.withOpacity(0.4),
+                  width: 1.5,
+                ),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: factionGlow.withOpacity(0.12),
+                  blurRadius: 20,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: (idx) => setState(() => _currentIndex = idx),
+              backgroundColor: Colors.transparent,
+              selectedItemColor: factionColor,
+              unselectedItemColor: FactionColors.textSecondary,
+              type: BottomNavigationBarType.fixed,
+              elevation: 0,
+              selectedFontSize: 12,
+              unselectedFontSize: 11,
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.map_outlined),
+                  activeIcon: Icon(Icons.map),
+                  label: '地圖',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.flag_outlined),
+                  activeIcon: Icon(Icons.flag),
+                  label: '任務',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.leaderboard_outlined),
+                  activeIcon: Icon(Icons.leaderboard),
+                  label: '排行榜',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person_outline),
+                  activeIcon: Icon(Icons.person),
+                  label: '我的',
+                ),
+              ],
             ),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: factionGlow.withOpacity(0.12),
-              blurRadius: 20,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (idx) => setState(() => _currentIndex = idx),
-          backgroundColor: Colors.transparent,
-          selectedItemColor: factionColor,
-          unselectedItemColor: FactionColors.textSecondary,
-          type: BottomNavigationBarType.fixed,
-          elevation: 0,
-          selectedFontSize: 12,
-          unselectedFontSize: 11,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.map_outlined),
-              activeIcon: Icon(Icons.map),
-              label: '地圖',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.flag_outlined),
-              activeIcon: Icon(Icons.flag),
-              label: '任務',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.leaderboard_outlined),
-              activeIcon: Icon(Icons.leaderboard),
-              label: '排行榜',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: '我的',
-            ),
-          ],
-        ),
-      ),
+        );
+      },
     );
   }
 }

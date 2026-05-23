@@ -105,18 +105,29 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   // 1. 領地控制圓圈 (CircleLayer)
                   final circles = docs.map((doc) {
                     final data = doc.data() as Map<String, dynamic>;
-                    final color = _categoryColor(data['category'] ?? '');
-                    // 根據打卡次數決定圓圈大小，基礎 50m，每次打卡 +5m，上限 300m
-                    final checkIns = data['totalCheckIns'] ?? 0;
-                    final radius = (50.0 + (checkIns * 5)).clamp(50.0, 300.0);
+                    
+                    // 動態計算佔領陣營
+                    final checkIns = data['checkInsByFaction'] as Map<String, dynamic>? ?? {'red': 0, 'green': 0, 'blue': 0};
+                    int r = (checkIns['red'] ?? 0) as int;
+                    int g = (checkIns['green'] ?? 0) as int;
+                    int b = (checkIns['blue'] ?? 0) as int;
+                    
+                    Color color = Colors.grey; // 預設無人佔領
+                    if (r > g && r > b) color = FactionColors.redPrimary;
+                    else if (g > r && g > b) color = FactionColors.greenPrimary;
+                    else if (b > r && b > g) color = FactionColors.bluePrimary;
+                    else if (r > 0 || g > 0 || b > 0) color = Colors.white; // 平手
+
+                    final totalCheckIns = data['totalCheckIns'] ?? 0;
+                    final radius = (50.0 + (totalCheckIns * 5)).clamp(50.0, 300.0);
                     
                     return CircleMarker(
                       point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
                       radius: radius,
                       useRadiusInMeter: true,
-                      color: color.withValues(alpha: 0.25),
-                      borderColor: color.withValues(alpha: 0.8),
-                      borderStrokeWidth: 2,
+                      color: color.withValues(alpha: 0.35),
+                      borderColor: color.withValues(alpha: 0.9),
+                      borderStrokeWidth: 3,
                     );
                   }).toList();
 
@@ -574,12 +585,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               '基礎積分 +${m['basePoints']}',
               style: TextStyle(color: color, fontSize: 15),
             ),
+            const SizedBox(height: 16),
+            
+            // 陣營佔領戰況
+            _buildTerritoryStats(m),
+
             const SizedBox(height: 20),
             // 在地圖上置中
             OutlinedButton.icon(
               icon: Icon(Icons.center_focus_strong, color: color),
-              label:
-                  Text('地圖定位', style: TextStyle(color: color)),
+              label: Text('地圖定位', style: TextStyle(color: color)),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: color),
                 shape: RoundedRectangleBorder(
@@ -613,6 +628,49 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           ],
         ),
       ),
+    );
+  }
+  Widget _buildTerritoryStats(Map<String, dynamic> m) {
+    final checkIns = m['checkInsByFaction'] as Map<String, dynamic>? ?? {'red': 0, 'green': 0, 'blue': 0};
+    int r = (checkIns['red'] ?? 0) as int;
+    int g = (checkIns['green'] ?? 0) as int;
+    int b = (checkIns['blue'] ?? 0) as int;
+    int total = r + g + b;
+    if (total == 0) total = 1; // 避免除以 0
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('陣營佔領戰況', style: TextStyle(color: Colors.white70, fontSize: 13)),
+        const SizedBox(height: 8),
+        _buildStatRow('美食紅', r, total, FactionColors.redPrimary),
+        const SizedBox(height: 6),
+        _buildStatRow('古蹟綠', g, total, FactionColors.greenPrimary),
+        const SizedBox(height: 6),
+        _buildStatRow('咖啡藍', b, total, FactionColors.bluePrimary),
+      ],
+    );
+  }
+
+  Widget _buildStatRow(String label, int count, int total, Color color) {
+    double ratio = count / total;
+    return Row(
+      children: [
+        SizedBox(width: 48, child: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold))),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: ratio,
+              backgroundColor: color.withValues(alpha: 0.15),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+              minHeight: 8,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(width: 30, child: Text('$count 次', style: const TextStyle(color: Colors.white, fontSize: 12), textAlign: TextAlign.right)),
+      ],
     );
   }
 }
