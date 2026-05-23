@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
+import '../services/map_cache_service.dart';
+import 'performance_screen.dart';
+import 'api_key_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -11,6 +14,7 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isSimplified = themeProvider.isSimplifiedMode;
+    final isDarkMode = themeProvider.isDarkMode;
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
@@ -24,51 +28,137 @@ class ProfileScreen extends StatelessWidget {
               Text(
                 '我的主頁',
                 style: TextStyle(
-                  color: themeProvider.isDarkMode ? FactionColors.gold : Colors.black87,
+                  color: isDarkMode ? FactionColors.gold : Colors.black87,
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 32),
-              
-              // 帳號資訊
-              ListTile(
-                leading: Icon(Icons.person, color: themeProvider.isDarkMode ? FactionColors.textPrimary : Colors.black87),
-                title: Text('帳號', style: TextStyle(color: themeProvider.isDarkMode ? FactionColors.textPrimary : Colors.black87)),
-                subtitle: Text(user?.email ?? '訪客', style: TextStyle(color: themeProvider.isDarkMode ? FactionColors.textSecondary : Colors.black54)),
-              ),
-              const Divider(color: Colors.grey),
+              const SizedBox(height: 24),
+              Expanded(
+                child: ListView(
+                  children: [
+                    // 帳號資訊
+                    ListTile(
+                      leading: Icon(Icons.person, color: isDarkMode ? FactionColors.textPrimary : Colors.black87),
+                      title: Text('帳號', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                      subtitle: Text(user?.email ?? '訪客', style: TextStyle(color: isDarkMode ? FactionColors.textSecondary : Colors.black54)),
+                    ),
+                    const Divider(color: Colors.grey),
 
-              // UI 切換 (遊戲/簡化)
-              ListTile(
-                leading: Icon(Icons.dashboard_customize, color: themeProvider.isDarkMode ? FactionColors.textPrimary : Colors.black87),
-                title: Text('切換介面模式 (目前: ${isSimplified ? "簡化版" : "遊戲版"})', style: TextStyle(color: themeProvider.isDarkMode ? FactionColors.textPrimary : Colors.black87)),
-                trailing: Switch(
-                  value: isSimplified,
-                  activeColor: FactionColors.gold,
-                  onChanged: (val) {
-                    themeProvider.toggleTheme();
-                  },
+                    // 語言設定
+                    ListTile(
+                      leading: Icon(Icons.language, color: isDarkMode ? FactionColors.textPrimary : Colors.black87),
+                      title: Text('語言 (Language)', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                      trailing: DropdownButton<String>(
+                        value: 'zh_TW',
+                        dropdownColor: isDarkMode ? FactionColors.cardBg : Colors.white,
+                        style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87),
+                        underline: const SizedBox(),
+                        items: const [
+                          DropdownMenuItem(value: 'zh_TW', child: Text('繁體中文')),
+                          DropdownMenuItem(value: 'en', child: Text('English')),
+                        ],
+                        onChanged: (val) {
+                          // TODO: 實作語系切換
+                        },
+                      ),
+                    ),
+                    const Divider(color: Colors.grey),
+
+                    // UI 切換 (遊戲/簡化)
+                    ListTile(
+                      leading: Icon(Icons.dashboard_customize, color: isDarkMode ? FactionColors.textPrimary : Colors.black87),
+                      title: Text('簡潔模式', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                      trailing: Switch(
+                        value: isSimplified,
+                        activeColor: FactionColors.gold,
+                        onChanged: (val) {
+                          themeProvider.setSimplifiedMode(val);
+                        },
+                      ),
+                    ),
+                    
+                    // 夜間/明亮模式切換
+                    ListTile(
+                      leading: Icon(isDarkMode ? Icons.dark_mode : Icons.light_mode, color: isDarkMode ? FactionColors.textPrimary : Colors.black87),
+                      title: Text('深色模式', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                      trailing: Switch(
+                        value: isDarkMode,
+                        activeColor: FactionColors.gold,
+                        onChanged: (val) {
+                          themeProvider.setThemeMode(val ? ThemeMode.dark : ThemeMode.light);
+                        },
+                      ),
+                    ),
+                    const Divider(color: Colors.grey),
+
+                    // 地圖下載與快取
+                    Consumer<MapCacheService>(
+                      builder: (context, mapCache, child) {
+                        return ListTile(
+                          leading: Icon(Icons.download_for_offline, color: isDarkMode ? Colors.white70 : Colors.black87),
+                          title: Text('下載嘉義市地圖', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                          subtitle: mapCache.isDownloading
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 4),
+                                    LinearProgressIndicator(
+                                      value: mapCache.downloadProgress,
+                                      backgroundColor: Colors.grey.withValues(alpha: 0.3),
+                                      color: FactionColors.gold,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text('${mapCache.downloadedTiles} / ${mapCache.totalTilesToDownload} Tiles', 
+                                        style: TextStyle(fontSize: 12, color: isDarkMode ? FactionColors.textSecondary : Colors.black54)),
+                                  ],
+                                )
+                              : Text('目前已快取: ${mapCache.downloadedTiles > 0 ? mapCache.downloadedTiles : "未知"} 瓦片', 
+                                  style: TextStyle(color: isDarkMode ? Colors.white54 : Colors.black54, fontSize: 12)),
+                          trailing: mapCache.isDownloading 
+                              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                      onPressed: () => mapCache.clearCache(),
+                                      tooltip: '清除快取',
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.cloud_download, color: FactionColors.gold),
+                                      onPressed: () => mapCache.startDownload(),
+                                      tooltip: '開始下載',
+                                    ),
+                                  ],
+                                ),
+                        );
+                      },
+                    ),
+                    const Divider(color: Colors.grey),
+
+                    // 績效與跑圖紀錄
+                    ListTile(
+                      leading: const Icon(Icons.history, color: FactionColors.gold),
+                      title: Text('績效與跑圖紀錄', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                      onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const PerformanceScreen()));
+                      },
+                    ),
+
+                    // API Key 設定
+                    ListTile(
+                      leading: Icon(Icons.vpn_key, color: isDarkMode ? Colors.white70 : Colors.black87),
+                      title: Text('API Key 設定', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                      onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const ApiKeyScreen()));
+                      },
+                    ),
+                  ],
                 ),
               ),
-              const Divider(color: Colors.grey),
-
-              // 夜間/明亮模式切換
-              ListTile(
-                leading: Icon(themeProvider.isDarkMode ? Icons.dark_mode : Icons.light_mode, color: themeProvider.isDarkMode ? FactionColors.textPrimary : Colors.black87),
-                title: Text('外觀模式 (目前: ${themeProvider.isDarkMode ? "夜間" : "明亮"})', style: TextStyle(color: themeProvider.isDarkMode ? FactionColors.textPrimary : Colors.black87)),
-                trailing: Switch(
-                  value: themeProvider.isDarkMode,
-                  activeColor: FactionColors.gold,
-                  onChanged: (val) {
-                    themeProvider.toggleDarkMode();
-                  },
-                ),
-              ),
-              const Divider(color: Colors.grey),
-
+              const SizedBox(height: 16),
               // 登出按鈕
-              const Spacer(),
               SizedBox(
                 width: double.infinity,
                 height: 50,

@@ -10,7 +10,10 @@ import 'package:provider/provider.dart';
 import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
+import '../services/weather_service.dart';
+import '../services/bus_service.dart';
 import 'faction_select_screen.dart';
+import 'ai_chat_bottom_sheet.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -24,6 +27,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   bool _isRouteRecording = false;
   final String _faction = 'red';
   String _missionFilter = 'all'; // 'all', 'food', 'heritage', 'cafe'
+  bool _showBus = false;
 
   late AnimationController _recordingPulse;
   
@@ -310,6 +314,37 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                           ],
                         ),
                       MarkerLayer(markers: markers),
+                      
+                      // 公車動態 Markers
+                      if (_showBus)
+                        Consumer<BusService>(
+                          builder: (context, busService, child) {
+                            return MarkerLayer(
+                              markers: busService.busStops.map((stop) {
+                                return Marker(
+                                  point: stop.position,
+                                  width: 40,
+                                  height: 40,
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('${stop.name}: ${stop.estimateTime > 0 ? "約 ${stop.estimateTime ~/ 60} 分鐘到站" : "未發車或末班車已過"}')),
+                                      );
+                                    },
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.blueAccent,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.white, width: 2),
+                                      ),
+                                      child: const Icon(Icons.directions_bus, color: Colors.white, size: 20),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          },
+                        ),
                     ],
                   );
                 },
@@ -440,7 +475,62 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
           ),
 
-          // ── 跑圖錄製 HUD ─────────────────────────────────────
+          // ── 天氣資訊小工具 ─────────────────────────────────────────
+          Positioned(
+            top: 24,
+            right: 16,
+            child: Consumer<WeatherService>(
+              builder: (context, weatherService, child) {
+                if (weatherService.isLoading) {
+                  return const CircularProgressIndicator();
+                }
+                final weather = weatherService.currentWeather;
+                if (weather == null) return const SizedBox.shrink();
+
+                IconData weatherIcon;
+                if (weather.description.contains('雨')) {
+                  weatherIcon = Icons.beach_access;
+                } else if (weather.description.contains('雲') || weather.description.contains('陰')) {
+                  weatherIcon = Icons.cloud;
+                } else {
+                  weatherIcon = Icons.wb_sunny;
+                }
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: (isDarkMode ? FactionColors.bgDark : Colors.white).withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: factionColor.withValues(alpha: 0.3)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      )
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(weatherIcon, color: FactionColors.gold, size: 20),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('${weather.minTemp}°C - ${weather.maxTemp}°C', 
+                              style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87, fontWeight: FontWeight.bold, fontSize: 12)),
+                          Text(weather.description, 
+                              style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54, fontSize: 10)),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // ── 中央準心與雷達掃描動畫 ─────────────────────────────────────────
           if (_isRouteRecording)
             Positioned(
               top: 90,
@@ -499,6 +589,39 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             right: 16,
             child: Column(
               children: [
+                // 諸羅小嚮導 (AI)
+                _MapFab(
+                  icon: Icons.auto_awesome,
+                  color: FactionColors.gold,
+                  iconColor: Colors.black87,
+                  onTap: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => const AiChatBottomSheet(),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                // 公車動態切換
+                _MapFab(
+                  icon: _showBus ? Icons.directions_bus : Icons.directions_bus_outlined,
+                  color: _showBus ? Colors.blueAccent : null,
+                  onTap: () async {
+                    setState(() {
+                      _showBus = !_showBus;
+                    });
+                    if (_showBus) {
+                      final busService = Provider.of<BusService>(context, listen: false);
+                      await busService.fetchBusData();
+                      if (busService.error != null && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(busService.error!)));
+                      }
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
                 // 放大
                 _MapFab(
                   icon: Icons.add,
@@ -895,9 +1018,10 @@ class _MapFab extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final Color? color;
+  final Color? iconColor;
 
   const _MapFab(
-      {required this.icon, required this.onTap, this.color});
+      {required this.icon, required this.onTap, this.color, this.iconColor});
 
   @override
   Widget build(BuildContext context) {
@@ -907,18 +1031,16 @@ class _MapFab extends StatelessWidget {
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: FactionColors.cardBg.withValues(alpha: 0.95),
+          color: color ?? FactionColors.cardBg.withValues(alpha: 0.95),
           shape: BoxShape.circle,
           border: Border.all(
-            color: (color ?? FactionColors.cardBorder)
-                .withValues(alpha: 0.5),
+            color: (color ?? FactionColors.cardBorder).withValues(alpha: 0.5),
           ),
           boxShadow: const [
             BoxShadow(color: Colors.black38, blurRadius: 6)
           ],
         ),
-        child: Icon(icon,
-            color: color ?? FactionColors.textSecondary, size: 20),
+        child: Icon(icon, color: iconColor ?? FactionColors.textSecondary, size: 20),
       ),
     );
   }

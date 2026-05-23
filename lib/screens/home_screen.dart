@@ -15,7 +15,8 @@ import '../widgets/multi_fab.dart';
 import 'shop_screen.dart';
 import 'performance_screen.dart';
 import 'backpack_screen.dart';
-
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'api_key_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -47,6 +48,49 @@ class _HomeScreenState extends State<HomeScreen> {
       const LeaderboardScreen(),
       const ProfileScreen(),
     ];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkWifiAndPromptDownload();
+    });
+  }
+
+  Future<void> _checkWifiAndPromptDownload() async {
+    final mapCache = Provider.of<MapCacheService>(context, listen: false);
+    
+    // 等待統計資訊載入完成
+    final stats = await mapCache.getStoreStats();
+    final downloadedTiles = stats['count'] as int;
+    
+    if (downloadedTiles > 0 || mapCache.isDownloading) return;
+
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.wifi)) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: FactionColors.bgDark,
+          title: const Text('偵測到 Wi-Fi 環境', style: TextStyle(color: Colors.white)),
+          content: const Text('為了提供更流暢的地圖體驗，是否要在背景預先下載嘉義市離線地圖？', style: TextStyle(color: Colors.white70)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('稍後再說', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                mapCache.startDownload();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已開始在背景下載離線地圖！')),
+                );
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: FactionColors.gold),
+              child: const Text('開始下載', style: TextStyle(color: Colors.black87)),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Future<void> _checkAdmin() async {
@@ -266,11 +310,12 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.push(context, MaterialPageRoute(builder: (_) => const PerformanceScreen()));
             },
           ),
+          // API Key 設定
           ListTile(
             leading: Icon(Icons.vpn_key, color: isDarkMode ? Colors.white70 : Colors.black87),
             title: Text('API Key 設定', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
             onTap: () {
-              // TODO: API Key
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ApiKeyScreen()));
             },
           ),
           ListTile(

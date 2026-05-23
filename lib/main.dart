@@ -13,6 +13,10 @@ import 'theme/theme_provider.dart';
 
 import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'services/map_cache_service.dart';
+import 'services/api_key_service.dart';
+import 'services/weather_service.dart';
+import 'services/bus_service.dart';
+import 'services/ai_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +29,19 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => MapCacheService()),
+        ChangeNotifierProvider(create: (_) => ApiKeyService()),
+        ChangeNotifierProxyProvider<ApiKeyService, WeatherService>(
+          create: (context) => WeatherService(Provider.of<ApiKeyService>(context, listen: false)),
+          update: (context, apiKeyService, previous) => previous ?? WeatherService(apiKeyService),
+        ),
+        ChangeNotifierProxyProvider<ApiKeyService, BusService>(
+          create: (context) => BusService(Provider.of<ApiKeyService>(context, listen: false)),
+          update: (context, apiKeyService, previous) => previous ?? BusService(apiKeyService),
+        ),
+        ChangeNotifierProxyProvider<ApiKeyService, AiService>(
+          create: (context) => AiService(Provider.of<ApiKeyService>(context, listen: false)),
+          update: (context, apiKeyService, previous) => previous ?? AiService(apiKeyService),
+        ),
       ],
       child: const MyApp(),
     ),

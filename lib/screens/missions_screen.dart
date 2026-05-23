@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
+import 'ai_chat_bottom_sheet.dart';
 
 /// 任務列表頁面
 /// 對應 Firestore missions/{missionId} collection
@@ -573,6 +574,38 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                   elevation: isCompleted ? 0 : 4,
                 ),
                 onPressed: isCompleted ? null : () => Navigator.pop(context),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.auto_awesome),
+                label: const Text(
+                  '詢問 AI 更多歷史故事與提示',
+                  style: TextStyle(fontSize: 16),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: FactionColors.gold,
+                  side: const BorderSide(color: FactionColors.gold),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: () {
+                  Navigator.pop(context); // Close detail sheet
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) {
+                      final title = m['title'] ?? '未知景點';
+                      return AiChatBottomSheet(
+                        initialPrompt: '請告訴我更多關於「$title」的歷史故事或是過關提示。',
+                      );
+                    },
+                  );
+                },
               ),
             ),
           ],
