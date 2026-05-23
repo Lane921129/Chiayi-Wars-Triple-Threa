@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 
@@ -90,10 +89,15 @@ class _LoginScreenState extends State<LoginScreen>
       }
     } on FirebaseAuthException catch (e) {
       String msg = '發生錯誤，請稍後再試';
-      if (e.code == 'user-not-found') msg = '找不到此帳號，請先註冊';
-      else if (e.code == 'wrong-password') msg = '密碼錯誤，再試一次';
-      else if (e.code == 'email-already-in-use') msg = '這個信箱已被使用';
-      else if (e.code == 'invalid-email') msg = '信箱格式不正確';
+      if (e.code == 'user-not-found') {
+        msg = '找不到此帳號，請先註冊';
+      } else if (e.code == 'wrong-password') {
+        msg = '密碼錯誤，再試一次';
+      } else if (e.code == 'email-already-in-use') {
+        msg = '這個信箱已被使用';
+      } else if (e.code == 'invalid-email') {
+        msg = '信箱格式不正確';
+      }
       if (mounted) _showSnack(msg, isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -188,7 +192,7 @@ class _LoginScreenState extends State<LoginScreen>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(colors: [
-                  FactionColors.redGlow.withOpacity(0.15),
+                  FactionColors.redGlow.withValues(alpha: 0.15),
                   Colors.transparent,
                 ]),
               ),
@@ -203,7 +207,7 @@ class _LoginScreenState extends State<LoginScreen>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(colors: [
-                  FactionColors.blueGlow.withOpacity(0.12),
+                  FactionColors.blueGlow.withValues(alpha: 0.12),
                   Colors.transparent,
                 ]),
               ),
@@ -218,7 +222,7 @@ class _LoginScreenState extends State<LoginScreen>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(colors: [
-                  FactionColors.greenGlow.withOpacity(0.10),
+                  FactionColors.greenGlow.withValues(alpha: 0.10),
                   Colors.transparent,
                 ]),
               ),
@@ -251,7 +255,7 @@ class _LoginScreenState extends State<LoginScreen>
                               ]),
                               boxShadow: [
                                 BoxShadow(
-                                  color: FactionColors.gold.withOpacity(0.4),
+                                  color: FactionColors.gold.withValues(alpha: 0.4),
                                   blurRadius: 30,
                                   spreadRadius: 5,
                                 ),
@@ -309,12 +313,12 @@ class _LoginScreenState extends State<LoginScreen>
                         color: FactionColors.cardBg,
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
-                          color: FactionColors.gold.withOpacity(0.3),
+                          color: FactionColors.gold.withValues(alpha: 0.3),
                           width: 1,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: FactionColors.gold.withOpacity(0.08),
+                            color: FactionColors.gold.withValues(alpha: 0.08),
                             blurRadius: 30,
                             spreadRadius: 2,
                           ),
@@ -429,7 +433,7 @@ class _LoginScreenState extends State<LoginScreen>
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text('或', style: TextStyle(
-                            color: FactionColors.textSecondary.withOpacity(0.8))),
+                            color: FactionColors.textSecondary.withValues(alpha: 0.8))),
                       ),
                       const Expanded(
                           child: Divider(color: FactionColors.divider)),
@@ -445,7 +449,7 @@ class _LoginScreenState extends State<LoginScreen>
                         onPressed: _isLoading ? null : _signInWithGoogle,
                         style: OutlinedButton.styleFrom(
                           side: BorderSide(
-                              color: FactionColors.cardBorder.withOpacity(0.5)),
+                              color: FactionColors.cardBorder.withValues(alpha: 0.5)),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14)),
                           foregroundColor: FactionColors.textPrimary,
@@ -515,7 +519,7 @@ class _FactionDot extends StatelessWidget {
             shape: BoxShape.circle,
             color: color,
             boxShadow: [
-              BoxShadow(color: color.withOpacity(0.6), blurRadius: 8, spreadRadius: 2)
+              BoxShadow(color: color.withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 2)
             ],
           ),
         ),

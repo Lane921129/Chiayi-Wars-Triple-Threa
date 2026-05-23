@@ -157,8 +157,8 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                                 BoxShadow(
                                   color: FactionColors.forFaction(
                                           _selectedFaction!)
-                                      .withOpacity(
-                                          0.4 * _glowController.value),
+                                      .withValues(
+                                          alpha: 0.4 * _glowController.value),
                                   blurRadius: 20,
                                   spreadRadius: 2,
                                 ),
@@ -247,7 +247,7 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
         boxShadow: isSelected
             ? [
                 BoxShadow(
-                  color: glow.withOpacity(0.25),
+                  color: glow.withValues(alpha: 0.25),
                   blurRadius: 20,
                   spreadRadius: 2,
                 ),
@@ -256,7 +256,7 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
       ),
       child: Material(
         color: isSelected
-            ? Color.lerp(FactionColors.cardBg, color.withOpacity(0.2), 0.5)
+            ? Color.lerp(FactionColors.cardBg, color.withValues(alpha: 0.2), 0.5)
             : FactionColors.cardBg,
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
@@ -282,7 +282,7 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                         boxShadow: isSelected
                             ? [
                                 BoxShadow(
-                                    color: glow.withOpacity(0.4),
+                                    color: glow.withValues(alpha: 0.4),
                                     blurRadius: 12,
                                     spreadRadius: 2)
                               ]
@@ -319,7 +319,7 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 8, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: color.withOpacity(0.2),
+                                    color: color.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: const Text('已選擇',
@@ -336,7 +336,7 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                             faction['subtitle'] as String,
                             style: TextStyle(
                               color: isSelected
-                                  ? color.withOpacity(0.7)
+                                  ? color.withValues(alpha: 0.7)
                                   : FactionColors.textSecondary,
                               fontSize: 13,
                             ),
@@ -373,7 +373,7 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                   Text(
                     faction['description'] as String,
                     style: TextStyle(
-                      color: color.withOpacity(0.85),
+                      color: color.withValues(alpha: 0.85),
                       fontSize: 14,
                       height: 1.6,
                     ),
@@ -384,9 +384,9 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
+                      color: color.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: color.withOpacity(0.3)),
+                      border: Border.all(color: color.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,

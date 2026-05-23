@@ -356,12 +356,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: isMe
-            ? FactionColors.gold.withOpacity(0.08)
+            ? FactionColors.gold.withValues(alpha: 0.08)
             : (isDarkMode ? FactionColors.cardBg : Colors.white),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isMe
-              ? FactionColors.gold.withOpacity(0.4)
+              ? FactionColors.gold.withValues(alpha: 0.4)
               : (isDarkMode ? FactionColors.cardBorder : Colors.grey.shade300),
           width: isMe ? 1.5 : 1,
         ),
@@ -388,8 +388,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
             height: 36,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: factionColor.withOpacity(0.15),
-              border: Border.all(color: factionColor.withOpacity(0.5)),
+              color: factionColor.withValues(alpha: 0.15),
+              border: Border.all(color: factionColor.withValues(alpha: 0.5)),
             ),
             child: Center(
               child: Text(
@@ -530,15 +530,15 @@ class _PodiumSlot extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                factionColor.withOpacity(0.4),
-                factionColor.withOpacity(0.2),
+                factionColor.withValues(alpha: 0.4),
+                factionColor.withValues(alpha: 0.2),
               ],
             ),
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(8),
               topRight: Radius.circular(8),
             ),
-            border: Border.all(color: factionColor.withOpacity(0.4)),
+            border: Border.all(color: factionColor.withValues(alpha: 0.4)),
           ),
           child: Center(
             child: Text(

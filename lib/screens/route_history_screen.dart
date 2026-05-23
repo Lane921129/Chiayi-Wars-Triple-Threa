@@ -44,7 +44,7 @@ class RouteHistoryScreen extends StatelessWidget {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
     if (h > 0) return '${h}h ${m}min';
-    return '${m} 分鐘';
+    return '$m 分鐘';
   }
 
   String _formatDistance(int meters) {
@@ -88,13 +88,13 @@ class RouteHistoryScreen extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  FactionColors.blueDark.withOpacity(0.6),
+                  FactionColors.blueDark.withValues(alpha: 0.6),
                   FactionColors.cardBg,
                 ],
               ),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                  color: FactionColors.blueLight.withOpacity(0.3)),
+                  color: FactionColors.blueLight.withValues(alpha: 0.3)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -147,10 +147,10 @@ class RouteHistoryScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: FactionColors.gold.withOpacity(0.08),
+              color: FactionColors.gold.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                  color: FactionColors.gold.withOpacity(0.2)),
+                  color: FactionColors.gold.withValues(alpha: 0.2)),
             ),
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -189,7 +189,7 @@ class RouteHistoryScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
             color: hasLocal
-                ? FactionColors.blueLight.withOpacity(0.25)
+                ? FactionColors.blueLight.withValues(alpha: 0.25)
                 : FactionColors.cardBorder),
       ),
       child: Column(
@@ -223,7 +223,7 @@ class RouteHistoryScreen extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: FactionColors.gold.withOpacity(0.12),
+                  color: FactionColors.gold.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
@@ -275,7 +275,7 @@ class RouteHistoryScreen extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: hasLocal
-                      ? FactionColors.greenDark.withOpacity(0.3)
+                      ? FactionColors.greenDark.withValues(alpha: 0.3)
                       : FactionColors.cardBorder,
                   borderRadius: BorderRadius.circular(6),
                 ),

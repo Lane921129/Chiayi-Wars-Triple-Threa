@@ -79,7 +79,7 @@ class PerformanceScreen extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: points > 0 ? Colors.green.withOpacity(0.2) : Colors.blue.withOpacity(0.2),
+                  backgroundColor: points > 0 ? Colors.green.withValues(alpha: 0.2) : Colors.blue.withValues(alpha: 0.2),
                   child: Icon(
                     points > 0 ? Icons.add_circle_outline : Icons.location_on,
                     color: points > 0 ? Colors.green : Colors.blue,

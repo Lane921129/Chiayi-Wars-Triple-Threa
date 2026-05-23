@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../services/map_cache_service.dart';
 import '../theme/theme_provider.dart';
-import '../theme/simplified_theme.dart';
 import '../services/auth_service.dart';
 import 'map_screen.dart';
 import 'missions_screen.dart';
@@ -28,7 +27,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final AuthService _authService = AuthService();
   int _currentIndex = 0;
-  bool _isAdmin = false;
+  final GlobalKey<MapScreenState> _mapKey = GlobalKey<MapScreenState>();
 
   // 即時讀取使用者資料
   Map<String, dynamic> _userData = {
@@ -41,9 +40,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _checkAdmin();
     _screens = [
-      const MapScreen(),
+      MapScreen(key: _mapKey),
       const MissionsScreen(),
       const LeaderboardScreen(),
       const ProfileScreen(),
@@ -68,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          backgroundColor: FactionColors.bgDark,
+          backgroundColor: FactionColors.darkBg,
           title: const Text('偵測到 Wi-Fi 環境', style: TextStyle(color: Colors.white)),
           content: const Text('為了提供更流暢的地圖體驗，是否要在背景預先下載嘉義市離線地圖？', style: TextStyle(color: Colors.white70)),
           actions: [
@@ -93,10 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _checkAdmin() async {
-    final isAdmin = await _authService.isAdmin();
-    if (mounted) setState(() => _isAdmin = isAdmin);
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -247,14 +242,14 @@ class _HomeScreenState extends State<HomeScreen> {
             title: Text('深色模式', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
             value: themeProvider.themeMode == ThemeMode.dark,
             onChanged: (val) => themeProvider.setThemeMode(val ? ThemeMode.dark : ThemeMode.light),
-            activeColor: FactionColors.gold,
+            activeThumbColor: FactionColors.gold,
           ),
           SwitchListTile(
             secondary: Icon(Icons.dashboard_customize, color: isDarkMode ? Colors.white70 : Colors.black87),
             title: Text('簡潔模式', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
             value: themeProvider.isSimplifiedMode,
             onChanged: (val) => themeProvider.setSimplifiedMode(val),
-            activeColor: FactionColors.gold,
+            activeThumbColor: FactionColors.gold,
           ),
           const Divider(),
           Padding(
@@ -331,6 +326,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMultiFunctionFab() {
+    final faction = _userData['faction'] as String? ?? 'red';
+    final factionColor = FactionColors.forFaction(faction);
+
     return MultiFab(
       onShop: () {
         showModalBottomSheet(
@@ -355,6 +353,10 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: Colors.transparent,
           builder: (context) => const BackpackBottomSheet(),
         );
+      },
+      factionColor: factionColor,
+      onToggle: (isOpen) {
+        _mapKey.currentState?.setMenuOpen(isOpen);
       },
     );
   }

@@ -11,7 +11,7 @@ class ChatMessage {
 class AiService extends ChangeNotifier {
   final ApiKeyService apiKeyService;
   
-  List<ChatMessage> _messages = [];
+  final List<ChatMessage> _messages = [];
   bool _isLoading = false;
   String? _error;
 

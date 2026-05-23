@@ -14,15 +14,54 @@ import '../services/weather_service.dart';
 import '../services/bus_service.dart';
 import 'faction_select_screen.dart';
 import 'ai_chat_bottom_sheet.dart';
+import '../widgets/map_multi_fab.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
   @override
-  State<MapScreen> createState() => _MapScreenState();
+  State<MapScreen> createState() => MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
+class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
+  // 公開屬性與方法給 HomeScreen 控制 (簡潔模式)
+  bool get isRouteRecording => _isRouteRecording;
+  bool get showBus => _showBus;
+
+  bool _isMenuOpenFromHome = false;
+  void setMenuOpen(bool isOpen) {
+    setState(() {
+      _isMenuOpenFromHome = isOpen;
+    });
+  }
+
+  void toggleRouteRecording() => _toggleRouteRecording();
+  
+  void recenter() => _mapController.move(_chiayi, 15);
+  
+  void zoomIn() {
+    final cur = _mapController.camera.zoom;
+    _mapController.move(_mapController.camera.center, cur + 1);
+  }
+  
+  void zoomOut() {
+    final cur = _mapController.camera.zoom;
+    _mapController.move(_mapController.camera.center, cur - 1);
+  }
+  
+  Future<void> toggleBus() async {
+    setState(() {
+      _showBus = !_showBus;
+    });
+    if (_showBus) {
+      final busService = Provider.of<BusService>(context, listen: false);
+      await busService.fetchBusData();
+      if (!mounted) return;
+      if (busService.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(busService.error!)));
+      }
+    }
+  }
   final MapController _mapController = MapController();
   bool _isRouteRecording = false;
   final String _faction = 'red';
@@ -31,10 +70,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   late AnimationController _recordingPulse;
   
-  // 跑圖相關
-  List<LatLng> _routePoints = [];
+  final List<LatLng> _routePoints = [];
   StreamSubscription<Position>? _positionStream;
-  DateTime? _routeStartTime;
   Timer? _timer;
   int _elapsedSeconds = 0;
 
@@ -116,7 +153,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       setState(() {
         _isRouteRecording = true;
         _routePoints.clear();
-        _routeStartTime = DateTime.now();
         _elapsedSeconds = 0;
       });
 
@@ -174,13 +210,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               initialZoom: 15.0,
               minZoom: 10,
               maxZoom: 18,
+              interactionOptions: InteractionOptions(
+                flags: InteractiveFlag.all,
+              ),
             ),
             children: [
               // OSM Tile Layer
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.zhuluo_app',
-                tileProvider: FMTCStore('chiayi_store').getTileProvider(),
+                tileProvider: FMTCTileProvider(
+                  stores: const {
+                    'chiayi_store': BrowseStoreStrategy.readUpdateCreate,
+                  },
+                ),
                 // 深色濾鏡：如果目前是夜間模式，讓 OSM 配合 App 暗色主題；明亮模式則直接原圖
                 tileBuilder: (context, child, tile) {
                   if (!isDarkMode) return child;
@@ -224,10 +267,15 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     int b = (checkIns['blue'] ?? 0) as int;
                     
                     Color color = Colors.grey; // 預設無人佔領
-                    if (r > g && r > b) color = FactionColors.redPrimary;
-                    else if (g > r && g > b) color = FactionColors.greenPrimary;
-                    else if (b > r && b > g) color = FactionColors.bluePrimary;
-                    else if (r > 0 || g > 0 || b > 0) color = Colors.white; // 平手
+                    if (r > g && r > b) {
+                      color = FactionColors.redPrimary;
+                    } else if (g > r && g > b) {
+                      color = FactionColors.greenPrimary;
+                    } else if (b > r && b > g) {
+                      color = FactionColors.bluePrimary;
+                    } else if (r > 0 || g > 0 || b > 0) {
+                      color = Colors.white; // 平手
+                    }
 
                     final totalCheckIns = data['totalCheckIns'] ?? 0;
                     final radius = (50.0 + (totalCheckIns * 5)).clamp(50.0, 300.0);
@@ -367,9 +415,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         height: 50,
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         decoration: BoxDecoration(
-                          color: isDarkMode ? Colors.black.withOpacity(0.4) : Colors.white.withOpacity(0.5),
+                          color: isDarkMode ? Colors.black.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white.withOpacity(0.2)),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                         ),
                         child: Row(
                           children: [
@@ -477,8 +525,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
           // ── 天氣資訊小工具 ─────────────────────────────────────────
           Positioned(
-            top: 24,
-            right: 16,
+            top: isSimplified ? 100 : 24,
+            right: isSimplified ? 24 : 16,
             child: Consumer<WeatherService>(
               builder: (context, weatherService, child) {
                 if (weatherService.isLoading) {
@@ -499,7 +547,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: (isDarkMode ? FactionColors.bgDark : Colors.white).withValues(alpha: 0.85),
+                    color: (isDarkMode ? FactionColors.darkBg : Colors.white).withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: factionColor.withValues(alpha: 0.3)),
                     boxShadow: [
@@ -538,7 +586,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               right: 16,
               child: AnimatedBuilder(
                 animation: _recordingPulse,
-                builder: (_, __) => Container(
+                 builder: (context, _) => Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
@@ -564,7 +612,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       const SizedBox(width: 8),
                       const Text('跑圖記錄中',
                           style: TextStyle(
-                            color: FactionColors.textPrimary,
+                             color: FactionColors.textPrimary,
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
                           )),
@@ -583,114 +631,48 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               ),
             ),
 
-          // ── 右下：縮放 + 跑圖按鈕 ────────────────────────────
+          // ── 右下：折疊式多功能懸浮選單 ────────────────────────────
           Positioned(
-            bottom: isSimplified ? 40 : 200,
+            bottom: 40,
             right: 16,
-            child: Column(
-              children: [
-                // 諸羅小嚮導 (AI)
-                _MapFab(
-                  icon: Icons.auto_awesome,
-                  color: FactionColors.gold,
-                  iconColor: Colors.black87,
-                  onTap: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => const AiChatBottomSheet(),
-                    );
-                  },
-                ),
-                const SizedBox(height: 8),
-                // 公車動態切換
-                _MapFab(
-                  icon: _showBus ? Icons.directions_bus : Icons.directions_bus_outlined,
-                  color: _showBus ? Colors.blueAccent : null,
-                  onTap: () async {
-                    setState(() {
-                      _showBus = !_showBus;
-                    });
-                    if (_showBus) {
-                      final busService = Provider.of<BusService>(context, listen: false);
-                      await busService.fetchBusData();
-                      if (busService.error != null && mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(busService.error!)));
-                      }
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-                // 放大
-                _MapFab(
-                  icon: Icons.add,
-                  onTap: () {
-                    final cur = _mapController.camera.zoom;
-                    _mapController.move(_mapController.camera.center, cur + 1);
-                  },
-                ),
-                const SizedBox(height: 8),
-                // 縮小
-                _MapFab(
-                  icon: Icons.remove,
-                  onTap: () {
-                    final cur = _mapController.camera.zoom;
-                    _mapController.move(_mapController.camera.center, cur - 1);
-                  },
-                ),
-                const SizedBox(height: 8),
-                // 回中心
-                _MapFab(
-                  icon: Icons.my_location,
-                  onTap: () => _mapController.move(_chiayi, 15),
-                  color: factionColor,
-                ),
-                const SizedBox(height: 12),
-                // 跑圖按鈕
-                AnimatedBuilder(
-                  animation: _recordingPulse,
-                  builder: (_, __) => GestureDetector(
-                    onTap: _toggleRouteRecording,
-                    child: Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _isRouteRecording
-                            ? FactionColors.redPrimary
-                            : FactionColors.cardBg,
-                        border: Border.all(
-                          color: _isRouteRecording
-                              ? FactionColors.redGlow.withValues(
-                                  alpha: 0.5 +
-                                      0.5 * _recordingPulse.value)
-                              : FactionColors.gold.withValues(alpha: 0.7),
-                          width: 2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: (_isRouteRecording
-                                    ? FactionColors.redGlow
-                                    : FactionColors.gold)
-                                .withValues(alpha: 0.25),
-                            blurRadius: 14,
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        _isRouteRecording
-                            ? Icons.stop
-                            : Icons.directions_run,
-                        color: _isRouteRecording
-                            ? Colors.white
-                            : FactionColors.gold,
-                        size: 28,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            child: MapMultiFab(
+              onAi: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) => const AiChatBottomSheet(),
+                );
+              },
+              onBus: () async {
+                setState(() {
+                  _showBus = !_showBus;
+                });
+                if (_showBus) {
+                  final busService = Provider.of<BusService>(context, listen: false);
+                  await busService.fetchBusData();
+                  if (!context.mounted) return;
+                  if (busService.error != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(busService.error!)));
+                  }
+                }
+              },
+              onLocate: () => _mapController.move(_chiayi, 15),
+              onRoute: _toggleRouteRecording,
+              onZoomIn: () {
+                final cur = _mapController.camera.zoom;
+                _mapController.move(_mapController.camera.center, cur + 1);
+              },
+              onZoomOut: () {
+                final cur = _mapController.camera.zoom;
+                _mapController.move(_mapController.camera.center, cur - 1);
+              },
+              isRouteRecording: _isRouteRecording,
+              showBus: _showBus,
+              factionColor: factionColor,
+              recordingPulse: _recordingPulse,
+              isOpen: isSimplified ? _isMenuOpenFromHome : null,
+              hideMainButton: isSimplified,
             ),
           ),
 
@@ -715,10 +697,15 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     
     Color bgColor = Colors.transparent;
     if (isSelected) {
-      if (value == 'food') bgColor = FactionColors.redPrimary;
-      else if (value == 'heritage') bgColor = FactionColors.greenPrimary;
-      else if (value == 'cafe') bgColor = FactionColors.bluePrimary;
-      else bgColor = Colors.black87;
+      if (value == 'food') {
+        bgColor = FactionColors.redPrimary;
+      } else if (value == 'heritage') {
+        bgColor = FactionColors.greenPrimary;
+      } else if (value == 'cafe') {
+        bgColor = FactionColors.bluePrimary;
+      } else {
+        bgColor = Colors.black87;
+      }
     }
 
     return GestureDetector(
@@ -1013,38 +1000,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 }
 
-// 地圖浮動按鈕
-class _MapFab extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  final Color? color;
-  final Color? iconColor;
 
-  const _MapFab(
-      {required this.icon, required this.onTap, this.color, this.iconColor});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: color ?? FactionColors.cardBg.withValues(alpha: 0.95),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: (color ?? FactionColors.cardBorder).withValues(alpha: 0.5),
-          ),
-          boxShadow: const [
-            BoxShadow(color: Colors.black38, blurRadius: 6)
-          ],
-        ),
-        child: Icon(icon, color: iconColor ?? FactionColors.textSecondary, size: 20),
-      ),
-    );
-  }
-}
 
 // Marker 底部三角箭頭
 class _MarkerArrow extends CustomPainter {

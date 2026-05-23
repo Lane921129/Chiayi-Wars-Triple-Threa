@@ -111,20 +111,20 @@ class VouchersScreen extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: isRedeemed
-            ? FactionColors.cardBg.withOpacity(0.5)
+            ? FactionColors.cardBg.withValues(alpha: 0.5)
             : FactionColors.cardBg,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isRedeemed
               ? FactionColors.cardBorder
-              : factionColor.withOpacity(0.5),
+              : factionColor.withValues(alpha: 0.5),
           width: isRedeemed ? 1 : 1.5,
         ),
         boxShadow: isRedeemed
             ? []
             : [
                 BoxShadow(
-                  color: factionGlow.withOpacity(0.08),
+                  color: factionGlow.withValues(alpha: 0.08),
                   blurRadius: 16,
                 ),
               ],
@@ -183,7 +183,7 @@ class VouchersScreen extends StatelessWidget {
                         v['discountDescription'] as String,
                         style: TextStyle(
                           color: isRedeemed
-                              ? FactionColors.textSecondary.withOpacity(0.6)
+                              ? FactionColors.textSecondary.withValues(alpha: 0.6)
                               : factionColor,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
@@ -196,7 +196,7 @@ class VouchersScreen extends StatelessWidget {
                             : '有效期：${v['expiresAt']}',
                         style: TextStyle(
                           color: isRedeemed
-                              ? FactionColors.textSecondary.withOpacity(0.5)
+                              ? FactionColors.textSecondary.withValues(alpha: 0.5)
                               : FactionColors.textSecondary,
                           fontSize: 11,
                         ),
@@ -271,9 +271,9 @@ class VouchersScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: factionColor.withOpacity(0.1),
+                color: factionColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: factionColor.withOpacity(0.3)),
+                border: Border.all(color: factionColor.withValues(alpha: 0.3)),
               ),
               child: Text(v['discountDescription'] as String,
                   style: TextStyle(
@@ -343,7 +343,7 @@ class _SectionHeader extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.15),
+            color: color.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text('$count',

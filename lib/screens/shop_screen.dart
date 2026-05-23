@@ -118,7 +118,7 @@ class _ShopBottomSheetState extends State<ShopBottomSheet> {
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: FactionColors.gold.withOpacity(0.2),
+                          color: FactionColors.gold.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: FactionColors.gold),
                         ),
@@ -176,7 +176,7 @@ class _ShopBottomSheetState extends State<ShopBottomSheet> {
                       child: ListTile(
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         leading: CircleAvatar(
-                          backgroundColor: FactionColors.gold.withOpacity(0.2),
+                          backgroundColor: FactionColors.gold.withValues(alpha: 0.2),
                           child: Text(item['icon'] ?? '🛍️', style: const TextStyle(fontSize: 20)),
                         ),
                         title: Text(item['name'], style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),

@@ -19,6 +19,12 @@ class _ApiKeyScreenState extends State<ApiKeyScreen> {
   late TextEditingController _tdxSecretController;
   late TextEditingController _geminiController;
 
+  // 隱蔽狀態變數 (預設全部遮蔽隱藏)
+  bool _obscureCwa = true;
+  bool _obscureTdxId = true;
+  bool _obscureTdxSecret = true;
+  bool _obscureGemini = true;
+
   @override
   void initState() {
     super.initState();
@@ -64,10 +70,10 @@ class _ApiKeyScreenState extends State<ApiKeyScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('API Key 設定'),
-        backgroundColor: isDarkMode ? FactionColors.bgDark : Colors.white,
+        backgroundColor: isDarkMode ? FactionColors.darkBg : Colors.white,
         foregroundColor: isDarkMode ? Colors.white : Colors.black,
       ),
-      backgroundColor: isDarkMode ? FactionColors.bgDark : Colors.white,
+      backgroundColor: isDarkMode ? FactionColors.darkBg : Colors.white,
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(
@@ -76,17 +82,25 @@ class _ApiKeyScreenState extends State<ApiKeyScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildSectionTitle('天氣服務 (中央氣象署 CWA)'),
-              _buildTextField(_cwaController, 'CWA API Key', isDarkMode),
+              _buildTextField(_cwaController, 'CWA API Key', isDarkMode, _obscureCwa, () {
+                setState(() => _obscureCwa = !_obscureCwa);
+              }),
               const SizedBox(height: 24),
               
               _buildSectionTitle('公車動態 (交通部 TDX)'),
-              _buildTextField(_tdxIdController, 'TDX Client ID', isDarkMode),
+              _buildTextField(_tdxIdController, 'TDX Client ID', isDarkMode, _obscureTdxId, () {
+                setState(() => _obscureTdxId = !_obscureTdxId);
+              }),
               const SizedBox(height: 12),
-              _buildTextField(_tdxSecretController, 'TDX Client Secret', isDarkMode),
+              _buildTextField(_tdxSecretController, 'TDX Client Secret', isDarkMode, _obscureTdxSecret, () {
+                setState(() => _obscureTdxSecret = !_obscureTdxSecret);
+              }),
               const SizedBox(height: 24),
               
               _buildSectionTitle('AI 導覽 (Google Gemini)'),
-              _buildTextField(_geminiController, 'Gemini API Key', isDarkMode),
+              _buildTextField(_geminiController, 'Gemini API Key', isDarkMode, _obscureGemini, () {
+                setState(() => _obscureGemini = !_obscureGemini);
+              }),
               const SizedBox(height: 32),
               
               SizedBox(
@@ -123,9 +137,16 @@ class _ApiKeyScreenState extends State<ApiKeyScreen> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, bool isDarkMode) {
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label,
+    bool isDarkMode,
+    bool obscureText,
+    VoidCallback onToggleVisibility,
+  ) {
     return TextFormField(
       controller: controller,
+      obscureText: obscureText,
       style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
       decoration: InputDecoration(
         labelText: label,
@@ -137,6 +158,13 @@ class _ApiKeyScreenState extends State<ApiKeyScreen> {
         focusedBorder: OutlineInputBorder(
           borderSide: const BorderSide(color: FactionColors.gold),
           borderRadius: BorderRadius.circular(8),
+        ),
+        suffixIcon: IconButton(
+          icon: Icon(
+            obscureText ? Icons.visibility_off : Icons.visibility,
+            color: isDarkMode ? Colors.white54 : Colors.black54,
+          ),
+          onPressed: onToggleVisibility,
         ),
       ),
     );

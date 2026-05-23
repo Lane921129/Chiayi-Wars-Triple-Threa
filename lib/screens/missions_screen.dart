@@ -295,20 +295,20 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: isCompleted
-            ? cardBgColor.withOpacity(0.5)
+            ? cardBgColor.withValues(alpha: 0.5)
             : cardBgColor,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: isCompleted
               ? borderColor
-              : categoryColor.withOpacity(0.35),
+              : categoryColor.withValues(alpha: 0.35),
           width: isCompleted ? 1 : 1.5,
         ),
         boxShadow: isCompleted
             ? []
             : [
                 BoxShadow(
-                  color: categoryColor.withOpacity(0.08),
+                  color: categoryColor.withValues(alpha: 0.08),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),
@@ -330,7 +330,7 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                   decoration: BoxDecoration(
                     color: isCompleted
                         ? FactionColors.cardBorder
-                        : categoryColor.withOpacity(0.15),
+                        : categoryColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Center(
@@ -416,7 +416,7 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: FactionColors.gold.withOpacity(0.1),
+                              color: FactionColors.gold.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Row(
@@ -444,7 +444,7 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
-                                color: bonusColor.withOpacity(0.15),
+                                color: bonusColor.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
@@ -502,7 +502,7 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
         decoration: BoxDecoration(
           color: cardBgColor,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: categoryColor.withOpacity(0.4)),
+          border: Border.all(color: categoryColor.withValues(alpha: 0.4)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -640,9 +640,9 @@ class _DetailChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

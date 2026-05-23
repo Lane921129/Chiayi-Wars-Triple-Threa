@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import 'package:zhuluo_app/screens/missions_screen.dart';
 

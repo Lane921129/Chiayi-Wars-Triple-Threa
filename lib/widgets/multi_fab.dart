@@ -8,12 +8,16 @@ class MultiFab extends StatefulWidget {
   final VoidCallback onShop;
   final VoidCallback onMission;
   final VoidCallback onBackpack;
+  final Color factionColor;
+  final ValueChanged<bool>? onToggle;
 
   const MultiFab({
     super.key,
     required this.onShop,
     required this.onMission,
     required this.onBackpack,
+    required this.factionColor,
+    this.onToggle,
   });
 
   @override
@@ -22,6 +26,7 @@ class MultiFab extends StatefulWidget {
 
 class _MultiFabState extends State<MultiFab> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+  late Animation<double> _expandAnimation;
   bool _isOpen = false;
 
   @override
@@ -29,7 +34,11 @@ class _MultiFabState extends State<MultiFab> with SingleTickerProviderStateMixin
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 300),
+    );
+    _expandAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutBack,
     );
   }
 
@@ -48,19 +57,22 @@ class _MultiFabState extends State<MultiFab> with SingleTickerProviderStateMixin
         _controller.reverse();
       }
     });
+    if (widget.onToggle != null) {
+      widget.onToggle!(_isOpen);
+    }
   }
 
-  Widget _buildItem(IconData icon, String label, Color color, double dy, VoidCallback onTap) {
-    final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
+  Widget _buildItem(IconData icon, String label, Color color, double dy, VoidCallback onTap, {Color iconColor = Colors.white}) {
+    final isDarkMode = Provider.of<ThemeProvider>(context, listen: false).isDarkMode;
     final textColor = isDarkMode ? Colors.white : Colors.black87;
 
     return AnimatedBuilder(
-      animation: _controller,
+      animation: _expandAnimation,
       builder: (context, child) {
         return Transform.translate(
-          offset: Offset(0, dy * (1 - _controller.value)),
+          offset: Offset(0, dy * (1 - _expandAnimation.value)),
           child: Opacity(
-            opacity: _controller.value,
+            opacity: _expandAnimation.value,
             child: child,
           ),
         );
@@ -68,9 +80,9 @@ class _MultiFabState extends State<MultiFab> with SingleTickerProviderStateMixin
       child: IgnorePointer(
         ignoring: !_isOpen,
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 16.0),
+          padding: const EdgeInsets.only(bottom: 12.0),
           child: SizedBox(
-            width: 48, // Mini FAB size
+            width: 48,
             height: 48,
             child: Stack(
               clipBehavior: Clip.none,
@@ -81,21 +93,29 @@ class _MultiFabState extends State<MultiFab> with SingleTickerProviderStateMixin
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: isDarkMode ? Colors.black54 : Colors.white70,
+                      color: isDarkMode ? Colors.black87 : Colors.white,
                       borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: color.withValues(alpha: 0.3)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        )
+                      ],
                     ),
-                    child: Text(label, style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
+                    child: Text(label, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 13)),
                   ),
                 ),
                 FloatingActionButton(
-                  heroTag: label,
+                  heroTag: 'simplified_$label',
                   mini: true,
                   backgroundColor: color,
                   onPressed: () {
                     _toggle();
                     onTap();
                   },
-                  child: Icon(icon, color: Colors.white),
+                  child: Icon(icon, color: iconColor, size: 22),
                 ),
               ],
             ),
@@ -111,17 +131,32 @@ class _MultiFabState extends State<MultiFab> with SingleTickerProviderStateMixin
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _buildItem(Icons.card_giftcard, 'Shop (兌換)', FactionColors.redPrimary, 180, widget.onShop),
-        _buildItem(Icons.assignment, 'Mission (任務)', FactionColors.greenPrimary, 120, widget.onMission),
-        _buildItem(Icons.backpack, 'Backpack (背包)', FactionColors.bluePrimary, 60, widget.onBackpack),
+        // 1. Shop
+        _buildItem(Icons.card_giftcard, 'Shop (商店兌換)', FactionColors.redPrimary, 180, widget.onShop),
+        
+        // 2. Mission
+        _buildItem(Icons.assignment, 'Mission (任務列表)', FactionColors.greenPrimary, 120, widget.onMission),
+        
+        // 3. Backpack
+        _buildItem(Icons.backpack, 'Backpack (我的背包)', FactionColors.bluePrimary, 60, widget.onBackpack),
+        
+        // 主按鈕 (大底座)
         FloatingActionButton(
-          heroTag: 'main_fab',
+          heroTag: 'simplified_main_fab',
           backgroundColor: SimplifiedTheme.primary,
           onPressed: _toggle,
-          child: AnimatedIcon(
-            icon: AnimatedIcons.menu_close,
-            progress: _controller,
-            color: Colors.white,
+          child: AnimatedBuilder(
+            animation: _expandAnimation,
+            builder: (context, child) {
+              return Transform.rotate(
+                angle: _expandAnimation.value * 0.75 * 3.14159, // 轉 135 度
+                child: Icon(
+                  _isOpen ? Icons.close : Icons.menu,
+                  color: Colors.white,
+                  size: 26,
+                ),
+              );
+            },
           ),
         ),
       ],

@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -21,14 +22,14 @@ class AuthService {
     try {
       //  新版：必須透過 authorizationClient 額外要求權限來取得 accessToken
       final GoogleSignInAccount googleUser = await GoogleSignIn.instance.authenticate();
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
       final credential = GoogleAuthProvider.credential(idToken: googleAuth.idToken);
 
       final UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
       await _syncUserData(userCredential.user);
       return true; //  成功登入，回傳 true
     } catch (error) {
-      print("Google 登入失敗: $error");
+      debugPrint("Google 登入失敗: $error");
       return false;
     }
   }
@@ -39,7 +40,7 @@ class AuthService {
       await _syncUserData(userCredential.user);
       return true;
     } catch (e) {
-      print("Anonymous SignIn Error: $e");
+      debugPrint("Anonymous SignIn Error: $e");
       return false;
     }
   }

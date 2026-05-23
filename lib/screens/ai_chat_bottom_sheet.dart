@@ -59,7 +59,7 @@ class _AiChatBottomSheetState extends State<AiChatBottomSheet> {
     final aiService = Provider.of<AiService>(context);
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isDarkMode = themeProvider.isDarkMode;
-    final bgColor = isDarkMode ? FactionColors.bgDark : Colors.white;
+    final bgColor = isDarkMode ? FactionColors.darkBg : Colors.white;
     final textColor = isDarkMode ? Colors.white : Colors.black87;
 
     return Container(
@@ -160,7 +160,7 @@ class _AiChatBottomSheetState extends State<AiChatBottomSheet> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: msg.isUser 
-            ? FactionColors.gold.withOpacity(0.8) 
+            ? FactionColors.gold.withValues(alpha: 0.8) 
             : (isDarkMode ? Colors.grey[800] : Colors.grey[300]),
           borderRadius: BorderRadius.circular(16).copyWith(
             bottomRight: msg.isUser ? const Radius.circular(0) : const Radius.circular(16),

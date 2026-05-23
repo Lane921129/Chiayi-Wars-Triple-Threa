@@ -75,13 +75,13 @@ class MapCacheService extends ChangeNotifier {
         notifyListeners();
       }, onError: (e) {
         _isDownloading = false;
-        print("Download error: $e");
+        debugPrint("Download error: $e");
         notifyListeners();
       });
 
     } catch (e) {
       _isDownloading = false;
-      print("Error initiating download: $e");
+      debugPrint("Error initiating download: $e");
       notifyListeners();
     }
   }
@@ -108,7 +108,7 @@ class MapCacheService extends ChangeNotifier {
       _totalTilesToDownload = 0;
       notifyListeners();
     } catch (e) {
-      print("Error clearing cache: $e");
+      debugPrint("Error clearing cache: $e");
     }
   }
 }

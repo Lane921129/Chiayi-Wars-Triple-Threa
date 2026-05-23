@@ -71,7 +71,7 @@ class ProfileScreen extends StatelessWidget {
                       title: Text('簡潔模式', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
                       trailing: Switch(
                         value: isSimplified,
-                        activeColor: FactionColors.gold,
+                        activeThumbColor: FactionColors.gold,
                         onChanged: (val) {
                           themeProvider.setSimplifiedMode(val);
                         },
@@ -84,7 +84,7 @@ class ProfileScreen extends StatelessWidget {
                       title: Text('深色模式', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
                       trailing: Switch(
                         value: isDarkMode,
-                        activeColor: FactionColors.gold,
+                        activeThumbColor: FactionColors.gold,
                         onChanged: (val) {
                           themeProvider.setThemeMode(val ? ThemeMode.dark : ThemeMode.light);
                         },
