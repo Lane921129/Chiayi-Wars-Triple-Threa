@@ -3,17 +3,25 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/faction_select_screen.dart';
 import 'theme/app_theme.dart';
+import 'theme/simplified_theme.dart';
+import 'theme/theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -21,10 +29,14 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
     return MaterialApp(
       title: '探索諸羅：三國爭霸',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: themeProvider.isDarkMode 
+          ? (themeProvider.isSimplifiedMode ? SimplifiedTheme.darkTheme : AppTheme.darkTheme)
+          : (themeProvider.isSimplifiedMode ? SimplifiedTheme.lightTheme : AppTheme.lightTheme),
       home: const AuthWrapper(),
     );
   }

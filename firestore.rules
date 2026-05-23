@@ -75,5 +75,59 @@ service cloud.firestore {
       allow delete: if request.auth != null
                     && request.auth.uid == resource.data.userId;
     }
+
+    // ── 社群功能 ──────────────────────────────────────────────────
+    
+    // 好友與邀請：只有參與者可讀寫
+    match /friendships/{docId} {
+      allow read: if request.auth != null && request.auth.uid in resource.data.users;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.requesterId;
+      allow update: if request.auth != null && request.auth.uid in resource.data.users;
+      allow delete: if request.auth != null && request.auth.uid in resource.data.users;
+    }
+
+    // 任務互動（按讚、評論）：大家可讀，本人可寫
+    match /mission_interactions/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // 收藏景點：本人可讀寫
+    match /user_bookmarks/{docId} {
+      allow read, write: if request.auth != null && request.auth.uid == request.resource.data.userId;
+    }
+
+    // 聊天頻道：參與者可讀寫
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
+      
+      // 子集合 messages
+      match /messages/{messageId} {
+        // 只有該聊天頻道的參與者可讀寫訊息
+        allow read: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow create: if request.auth != null 
+                      && request.auth.uid == request.resource.data.senderId
+                      && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      }
+    }
+    
+    // ── 成就與設定 ────────────────────────────────────────────────
+    match /achievements/{achievementId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
+    }
+
+    match /user_achievements/{docId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow update, delete: if false;
+    }
+
+    match /app_config/{configId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
+    }
+
   }
 }

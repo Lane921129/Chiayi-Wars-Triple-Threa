@@ -176,4 +176,32 @@ class AppTheme {
           titleLarge: TextStyle(color: FactionColors.textPrimary, fontWeight: FontWeight.bold),
         ),
       );
+
+  // 明亮版遊戲風 (Gamified Light)
+  static ThemeData get lightTheme {
+    return ThemeData(
+      brightness: Brightness.light,
+      primaryColor: FactionColors.gold,
+      scaffoldBackgroundColor: const Color(0xFFF5F5F5),
+      colorScheme: const ColorScheme.light(
+        primary: FactionColors.gold,
+        secondary: FactionColors.redPrimary,
+        surface: Colors.white,
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.white,
+        elevation: 1,
+        iconTheme: IconThemeData(color: FactionColors.textPrimary),
+        titleTextStyle: TextStyle(
+          color: FactionColors.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textTheme: const TextTheme(
+        bodyLarge: TextStyle(color: FactionColors.textPrimary),
+        bodyMedium: TextStyle(color: FactionColors.textSecondary),
+      ),
+    );
+  }
 }

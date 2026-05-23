@@ -15,6 +15,10 @@ Firestore
 ├── route_sessions/{sessionId}      ← 跑圖摘要（本機存 GPS 點，雲端存摘要）
 ├── achievements/{achievementId}    ← 成就定義（管理員維護）【新增】
 ├── user_achievements/{docId}       ← 玩家已解鎖成就（玩家讀寫）【新增】
+├── friendships/{docId}             ← 好友與邀請關係【社群新增】
+├── mission_interactions/{docId}    ← 任務按讚與評論【社群新增】
+├── user_bookmarks/{docId}          ← 玩家景點收藏清單【社群新增】
+├── chats/{chatId}                  ← 聊天室頻道（群組或私訊）【社群新增】
 └── app_config/{configId}           ← App 全域設定（管理員維護）【新增】
 ```
 
@@ -184,6 +188,63 @@ Firestore
 | `userId` | string | 玩家 UID |
 | `achievementId` | string | 成就 ID |
 | `unlockedAt` | timestamp | 解鎖時間 |
+
+---
+
+### 📁 `friendships/{docId}` 【社群新增】
+記錄玩家之間的好友關係或邀請，docId 建議用 `{userIdA}_{userIdB}` (依字母排序)
+
+| 欄位 | 類型 | 說明 |
+|---|---|---|
+| `users` | array\<string\> | 包含雙方 UID，方便查詢 |
+| `status` | string | `"pending"` (邀請中) / `"accepted"` (已為好友) |
+| `requesterId` | string | 發送邀請者的 UID |
+| `createdAt` | timestamp | 建立/成為好友時間 |
+
+---
+
+### 📁 `mission_interactions/{docId}` 【社群新增】
+對任務或景點的互動（按讚、留言）
+
+| 欄位 | 類型 | 說明 |
+|---|---|---|
+| `missionId` | string | 任務 ID |
+| `userId` | string | 互動者 UID |
+| `type` | string | `"like"` (按讚) / `"comment"` (評論) |
+| `content` | string | 評論內容（如果是 like 則為空） |
+| `createdAt` | timestamp | 互動時間 |
+
+---
+
+### 📁 `user_bookmarks/{docId}` 【社群新增】
+玩家的收藏清單
+
+| 欄位 | 類型 | 說明 |
+|---|---|---|
+| `userId` | string | 收藏者 UID |
+| `missionId` | string | 被收藏的任務 ID |
+| `listName` | string | 收藏清單名稱（如："週末想去"、"預設"） |
+| `createdAt` | timestamp | 收藏時間 |
+
+---
+
+### 📁 `chats/{chatId}` & Subcollection `messages` 【社群新增】
+
+**`chats/{chatId}`** (聊天室中介資料)
+| 欄位 | 類型 | 說明 |
+|---|---|---|
+| `type` | string | `"private"` (私訊) / `"faction"` (陣營群組) |
+| `participants` | array\<string\> | 參與者 UID (若是 private 則是2人，若是 faction 則是該陣營所有活躍者) |
+| `faction` | string | 若為陣營群組，填入對應陣營 (可空) |
+| `lastMessage` | string | 最後一則訊息摘要 |
+| `updatedAt` | timestamp | 最後更新時間 |
+
+**`chats/{chatId}/messages/{messageId}`** (實際訊息)
+| 欄位 | 類型 | 說明 |
+|---|---|---|
+| `senderId` | string | 發送者 UID |
+| `text` | string | 訊息內容 |
+| `createdAt` | timestamp | 發送時間 |
 
 ---
 
