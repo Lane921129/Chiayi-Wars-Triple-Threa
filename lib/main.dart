@@ -11,14 +11,21 @@ import 'theme/app_theme.dart';
 import 'theme/simplified_theme.dart';
 import 'theme/theme_provider.dart';
 
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
+import 'services/map_cache_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await FMTCObjectBoxBackend().initialise();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => MapCacheService()),
+      ],
       child: const MyApp(),
     ),
   );

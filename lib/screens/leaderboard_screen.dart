@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../theme/theme_provider.dart';
 
 /// 排行榜頁面
 /// 對應 Firestore users_public collection（totalScore / redScore / greenScore / blueScore）
@@ -130,22 +132,27 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   Widget build(BuildContext context) {
     final sorted = _sortedPlayers;
     final totalFaction = _factionTotals.values.fold(0, (a, b) => a + b);
+    
+    final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
+    final textColor = isDarkMode ? FactionColors.textPrimary : Colors.black87;
+    final textSubColor = isDarkMode ? FactionColors.textSecondary : Colors.black54;
+    final cardBgColor = isDarkMode ? FactionColors.cardBg : Colors.white;
 
     return Scaffold(
-      backgroundColor: FactionColors.darkBg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
             // ── 頂部標題 ──
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     '🏆 天下排行榜',
                     style: TextStyle(
-                      color: FactionColors.textPrimary,
+                      color: textColor,
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
                     ),
@@ -153,7 +160,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   Text(
                     '三軍征戰 · 爭奪諸羅',
                     style: TextStyle(
-                      color: FactionColors.textSecondary,
+                      color: textSubColor,
                       fontSize: 13,
                     ),
                   ),
@@ -166,7 +173,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
             // ── 三陣營戰況 Bar ──
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _buildFactionWarBar(totalFaction),
+              child: _buildFactionWarBar(totalFaction, isDarkMode),
             ),
 
             const SizedBox(height: 16),
@@ -175,9 +182,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: FactionColors.cardBg,
+                color: cardBgColor,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: FactionColors.cardBorder),
+                border: Border.all(color: isDarkMode ? FactionColors.cardBorder : Colors.grey.shade300),
               ),
               child: TabBar(
                 controller: _tabController,
@@ -189,8 +196,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: Colors.transparent,
-                labelColor: FactionColors.darkBg,
-                unselectedLabelColor: FactionColors.textSecondary,
+                labelColor: isDarkMode ? FactionColors.darkBg : Colors.white,
+                unselectedLabelColor: textSubColor,
                 labelStyle: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
@@ -207,14 +214,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
             const SizedBox(height: 8),
 
             // ── 前三名 Podium ──
-            if (sorted.length >= 3) _buildPodium(sorted),
+            if (sorted.length >= 3) _buildPodium(sorted, isDarkMode),
 
             // ── 排行榜列表 ──
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: sorted.length,
-                itemBuilder: (_, i) => _buildPlayerRow(sorted[i], i + 1),
+                itemBuilder: (_, i) => _buildPlayerRow(sorted[i], i + 1, isDarkMode),
               ),
             ),
           ],
@@ -223,7 +230,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     );
   }
 
-  Widget _buildFactionWarBar(int total) {
+  Widget _buildFactionWarBar(int total, bool isDarkMode) {
     final redPct = _factionTotals['red']! / total;
     final greenPct = _factionTotals['green']! / total;
     final bluePct = _factionTotals['blue']! / total;
@@ -231,24 +238,24 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: FactionColors.cardBg,
+        color: isDarkMode ? FactionColors.cardBg : Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: FactionColors.cardBorder),
+        border: Border.all(color: isDarkMode ? FactionColors.cardBorder : Colors.grey.shade300),
       ),
       child: Column(
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('⚔️ 三國戰況',
                   style: TextStyle(
-                    color: FactionColors.textPrimary,
+                    color: isDarkMode ? FactionColors.textPrimary : Colors.black87,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                   )),
               Text('實時更新',
                   style: TextStyle(
-                    color: FactionColors.textSecondary,
+                    color: isDarkMode ? FactionColors.textSecondary : Colors.black54,
                     fontSize: 11,
                   )),
             ],
@@ -315,26 +322,26 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     );
   }
 
-  Widget _buildPodium(List<Map<String, dynamic>> sorted) {
+  Widget _buildPodium(List<Map<String, dynamic>> sorted, bool isDarkMode) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           // 2nd
-          Expanded(child: _PodiumSlot(player: sorted[1], rank: 2, score: _getScore(sorted[1]))),
+          Expanded(child: _PodiumSlot(player: sorted[1], rank: 2, score: _getScore(sorted[1]), isDarkMode: isDarkMode)),
           const SizedBox(width: 8),
           // 1st (taller)
-          Expanded(child: _PodiumSlot(player: sorted[0], rank: 1, score: _getScore(sorted[0]))),
+          Expanded(child: _PodiumSlot(player: sorted[0], rank: 1, score: _getScore(sorted[0]), isDarkMode: isDarkMode)),
           const SizedBox(width: 8),
           // 3rd
-          Expanded(child: _PodiumSlot(player: sorted[2], rank: 3, score: _getScore(sorted[2]))),
+          Expanded(child: _PodiumSlot(player: sorted[2], rank: 3, score: _getScore(sorted[2]), isDarkMode: isDarkMode)),
         ],
       ),
     );
   }
 
-  Widget _buildPlayerRow(Map<String, dynamic> player, int rank) {
+  Widget _buildPlayerRow(Map<String, dynamic> player, int rank, bool isDarkMode) {
     final isMe = player['uid'] == 'me';
     final score = _getScore(player);
     final factionColor = FactionColors.forFaction(player['faction'] as String);
@@ -350,12 +357,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       decoration: BoxDecoration(
         color: isMe
             ? FactionColors.gold.withOpacity(0.08)
-            : FactionColors.cardBg,
+            : (isDarkMode ? FactionColors.cardBg : Colors.white),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isMe
               ? FactionColors.gold.withOpacity(0.4)
-              : FactionColors.cardBorder,
+              : (isDarkMode ? FactionColors.cardBorder : Colors.grey.shade300),
           width: isMe ? 1.5 : 1,
         ),
       ),
@@ -402,7 +409,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   style: TextStyle(
                     color: isMe
                         ? FactionColors.gold
-                        : FactionColors.textPrimary,
+                        : (isDarkMode ? FactionColors.textPrimary : Colors.black87),
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
                   ),
@@ -423,7 +430,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                 RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
                 (m) => '${m[1]},'),
             style: TextStyle(
-              color: isMe ? FactionColors.gold : FactionColors.textPrimary,
+              color: isMe ? FactionColors.gold : (isDarkMode ? FactionColors.textPrimary : Colors.black87),
               fontWeight: FontWeight.bold,
               fontSize: 18,
             ),
@@ -475,9 +482,10 @@ class _PodiumSlot extends StatelessWidget {
   final Map<String, dynamic> player;
   final int rank;
   final int score;
+  final bool isDarkMode;
 
   const _PodiumSlot(
-      {required this.player, required this.rank, required this.score});
+      {required this.player, required this.rank, required this.score, required this.isDarkMode});
 
   @override
   Widget build(BuildContext context) {
@@ -496,8 +504,8 @@ class _PodiumSlot extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           player['displayName'] as String,
-          style: const TextStyle(
-            color: FactionColors.textPrimary,
+          style: TextStyle(
+            color: isDarkMode ? FactionColors.textPrimary : Colors.black87,
             fontSize: 11,
             fontWeight: FontWeight.bold,
           ),

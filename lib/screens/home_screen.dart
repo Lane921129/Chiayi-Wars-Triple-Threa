@@ -2,13 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../services/map_cache_service.dart';
 import '../theme/theme_provider.dart';
 import '../theme/simplified_theme.dart';
 import '../services/auth_service.dart';
 import 'map_screen.dart';
 import 'missions_screen.dart';
+import 'missions_bottom_sheet.dart';
 import 'leaderboard_screen.dart';
 import 'profile_screen.dart';
+import '../widgets/multi_fab.dart';
+import 'shop_screen.dart';
+import 'performance_screen.dart';
+import 'backpack_screen.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -56,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isSimplified = themeProvider.isSimplifiedMode;
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('users_public').doc(user.uid).snapshots(),
@@ -78,7 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           appBar: null,
-          drawer: isSimplified ? _buildSidebar() : null,
+          drawer: _buildSidebar(isDarkMode, themeProvider),
           body: IndexedStack(
             index: _currentIndex,
             children: _screens,
@@ -92,13 +100,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: FactionColors.cardBg,
                   border: Border(
                     top: BorderSide(
-                      color: factionColor.withOpacity(0.4),
+                      color: factionColor.withValues(alpha: 0.4),
                       width: 1.5,
                     ),
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: factionGlow.withOpacity(0.12),
+                      color: factionGlow.withValues(alpha: 0.12),
                       blurRadius: 20,
                       offset: const Offset(0, -4),
                     ),
@@ -143,77 +151,122 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 簡化版側邊欄 (Sidebar)
-  Widget _buildSidebar() {
+  Widget _buildSidebar(bool isDarkMode, ThemeProvider themeProvider) {
+    final factionColor = FactionColors.forFaction(_userData['faction'] ?? 'red');
+    
     return Drawer(
-      backgroundColor: SimplifiedTheme.surface,
+      backgroundColor: isDarkMode ? FactionColors.cardBg : Colors.white,
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          DrawerHeader(
-            decoration: const BoxDecoration(
-              color: SimplifiedTheme.primary,
+          UserAccountsDrawerHeader(
+            decoration: BoxDecoration(
+              color: isDarkMode ? Colors.black87 : factionColor.withValues(alpha: 0.8),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Colors.white,
-                  child: Icon(Icons.person, size: 36, color: SimplifiedTheme.primary),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  _userData['displayName'] ?? '探索者',
-                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+            accountName: Text(
+              _userData['username'] ?? 'User',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+            ),
+            accountEmail: Text(
+              '${FactionColors.emojiForFaction(_userData['faction'] ?? 'red')} ${FactionColors.nameForFaction(_userData['faction'] ?? 'red')}',
+              style: const TextStyle(color: FactionColors.gold, fontWeight: FontWeight.bold),
+            ),
+            currentAccountPicture: const CircleAvatar(
+              backgroundColor: Colors.white,
+              child: Icon(Icons.person, size: 40, color: Colors.grey),
+            ),
+          ),
+          ListTile(
+            leading: Icon(Icons.language, color: isDarkMode ? Colors.white70 : Colors.black87),
+            title: Text('語言 (Language)', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
+            trailing: DropdownButton<String>(
+              value: 'zh_TW',
+              dropdownColor: isDarkMode ? FactionColors.cardBg : Colors.white,
+              style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
+              underline: const SizedBox(),
+              items: const [
+                DropdownMenuItem(value: 'zh_TW', child: Text('繁體中文')),
+                DropdownMenuItem(value: 'en', child: Text('English')),
               ],
+              onChanged: (val) {
+                // TODO: 實作語系切換
+              },
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.map, color: SimplifiedTheme.textPrimary),
-            title: const Text('地圖主頁 (Home)', style: TextStyle(color: SimplifiedTheme.textPrimary)),
-            onTap: () {
-              Navigator.pop(context);
-              setState(() => _currentIndex = 0);
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+            child: Text('外觀 (Appearance)', style: TextStyle(color: isDarkMode ? Colors.white54 : Colors.black54, fontSize: 12)),
+          ),
+          SwitchListTile(
+            secondary: Icon(isDarkMode ? Icons.dark_mode : Icons.light_mode, color: isDarkMode ? Colors.white70 : Colors.black87),
+            title: Text('深色模式', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
+            value: themeProvider.themeMode == ThemeMode.dark,
+            onChanged: (val) => themeProvider.setThemeMode(val ? ThemeMode.dark : ThemeMode.light),
+            activeColor: FactionColors.gold,
+          ),
+          SwitchListTile(
+            secondary: Icon(Icons.dashboard_customize, color: isDarkMode ? Colors.white70 : Colors.black87),
+            title: Text('簡潔模式', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
+            value: themeProvider.isSimplifiedMode,
+            onChanged: (val) => themeProvider.setSimplifiedMode(val),
+            activeColor: FactionColors.gold,
+          ),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+            child: Text('設定 (Setting)', style: TextStyle(color: isDarkMode ? Colors.white54 : Colors.black54, fontSize: 12)),
+          ),
+          Consumer<MapCacheService>(
+            builder: (context, mapCache, child) {
+              return ListTile(
+                leading: Icon(Icons.download_for_offline, color: isDarkMode ? Colors.white70 : Colors.black87),
+                title: Text('下載嘉義市地圖', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
+                subtitle: mapCache.isDownloading
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          LinearProgressIndicator(
+                            value: mapCache.downloadProgress,
+                            backgroundColor: Colors.grey.withValues(alpha: 0.3),
+                            color: FactionColors.gold,
+                          ),
+                          const SizedBox(height: 4),
+                          Text('${mapCache.downloadedTiles} / ${mapCache.totalTilesToDownload} Tiles', 
+                              style: const TextStyle(fontSize: 12)),
+                        ],
+                      )
+                    : Text('目前已快取: ${mapCache.downloadedTiles > 0 ? mapCache.downloadedTiles : "未知"} 瓦片', 
+                        style: TextStyle(color: isDarkMode ? Colors.white54 : Colors.black54, fontSize: 12)),
+                trailing: mapCache.isDownloading 
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                    : IconButton(
+                        icon: const Icon(Icons.cloud_download, color: FactionColors.gold),
+                        onPressed: () => mapCache.startDownload(),
+                      ),
+              );
             },
           ),
           ListTile(
-            leading: const Icon(Icons.storefront, color: SimplifiedTheme.textPrimary),
-            title: const Text('兌換商店 (Shop)', style: TextStyle(color: SimplifiedTheme.textPrimary)),
+            leading: const Icon(Icons.history, color: FactionColors.gold),
+            title: Text('績效與跑圖紀錄', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
             onTap: () {
-              // TODO: Navigate to Shop
-              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const PerformanceScreen()));
             },
           ),
           ListTile(
-            leading: const Icon(Icons.flag, color: SimplifiedTheme.textPrimary),
-            title: const Text('勢力任務 (Mission)', style: TextStyle(color: SimplifiedTheme.textPrimary)),
+            leading: Icon(Icons.vpn_key, color: isDarkMode ? Colors.white70 : Colors.black87),
+            title: Text('API Key 設定', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
             onTap: () {
-              Navigator.pop(context);
-              setState(() => _currentIndex = 1);
+              // TODO: API Key
             },
           ),
           ListTile(
-            leading: const Icon(Icons.language, color: SimplifiedTheme.textPrimary),
-            title: const Text('語言切換 (Language)', style: TextStyle(color: SimplifiedTheme.textPrimary)),
-            onTap: () {},
-          ),
-          ListTile(
-            leading: const Icon(Icons.settings, color: SimplifiedTheme.textPrimary),
-            title: const Text('設定 (Settings)', style: TextStyle(color: SimplifiedTheme.textPrimary)),
-            onTap: () {
-              Navigator.pop(context);
-              // 將 ProfileScreen 當作設定頁面
-              setState(() => _currentIndex = 3);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.color_lens_outlined, color: SimplifiedTheme.textPrimary),
-            title: const Text('切換至遊戲模式', style: TextStyle(color: SimplifiedTheme.textPrimary)),
-            onTap: () {
-              Provider.of<ThemeProvider>(context, listen: false).toggleTheme();
-              Navigator.pop(context); // close drawer
+            leading: const Icon(Icons.logout, color: Colors.redAccent),
+            title: const Text('登出', style: TextStyle(color: Colors.redAccent)),
+            onTap: () async {
+              await _authService.signOut();
             },
           ),
         ],
@@ -221,18 +274,32 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 簡化版多功能欄 (FAB Menu) - 改為中央單一背包
   Widget _buildMultiFunctionFab() {
-    return FloatingActionButton(
-      onPressed: () {
-        // TODO: Open Backpack
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('背包系統建置中...')),
+    return MultiFab(
+      onShop: () {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (context) => const ShopBottomSheet(),
         );
       },
-      backgroundColor: SimplifiedTheme.primary,
-      elevation: 4,
-      child: const Icon(Icons.backpack, color: Colors.white, size: 28),
+      onMission: () {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (context) => const MissionsBottomSheet(),
+        );
+      },
+      onBackpack: () {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (context) => const BackpackBottomSheet(),
+        );
+      },
     );
   }
 }

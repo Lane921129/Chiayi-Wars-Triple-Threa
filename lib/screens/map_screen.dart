@@ -1,9 +1,13 @@
 import 'dart:ui' as ui;
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import 'faction_select_screen.dart';
@@ -22,6 +26,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   String _missionFilter = 'all'; // 'all', 'food', 'heritage', 'cafe'
 
   late AnimationController _recordingPulse;
+  
+  // 跑圖相關
+  List<LatLng> _routePoints = [];
+  StreamSubscription<Position>? _positionStream;
+  DateTime? _routeStartTime;
+  Timer? _timer;
+  int _elapsedSeconds = 0;
 
   // 嘉義市中心座標
   static const LatLng _chiayi = LatLng(23.4800, 120.4491);
@@ -41,7 +52,89 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _recordingPulse.dispose();
+    _positionStream?.cancel();
+    _timer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _toggleRouteRecording() async {
+    if (_isRouteRecording) {
+      // 停止錄製
+      setState(() {
+        _isRouteRecording = false;
+      });
+      _positionStream?.cancel();
+      _timer?.cancel();
+
+      // 結算與存檔
+      if (_routePoints.length >= 2) {
+        double totalDistance = 0;
+        final Distance distanceCalc = const Distance();
+        for (int i = 0; i < _routePoints.length - 1; i++) {
+          totalDistance += distanceCalc.as(LengthUnit.Meter, _routePoints[i], _routePoints[i+1]);
+        }
+
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          await _firestore.collection('users').doc(user.uid).collection('routes').add({
+            'timestamp': FieldValue.serverTimestamp(),
+            'durationSeconds': _elapsedSeconds,
+            'distanceMeters': totalDistance,
+            'points': _routePoints.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList(),
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('跑圖已儲存！總距離：${totalDistance.toStringAsFixed(0)}m')),
+            );
+          }
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('跑圖距離過短，未儲存')),
+          );
+        }
+      }
+      
+      setState(() {
+        _routePoints.clear();
+        _elapsedSeconds = 0;
+      });
+    } else {
+      // 開始錄製
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      setState(() {
+        _isRouteRecording = true;
+        _routePoints.clear();
+        _routeStartTime = DateTime.now();
+        _elapsedSeconds = 0;
+      });
+
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {
+          _elapsedSeconds++;
+        });
+      });
+
+      const locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      );
+
+      _positionStream = Geolocator.getPositionStream(locationSettings: locationSettings).listen((Position pos) {
+        final point = LatLng(pos.latitude, pos.longitude);
+        setState(() {
+          _routePoints.add(point);
+        });
+        _mapController.move(point, 17);
+      });
+    }
   }
 
   Color _categoryColor(String cat) {
@@ -81,9 +174,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             children: [
               // OSM Tile Layer
               TileLayer(
-                urlTemplate:
-                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.zhuluo_app',
+                tileProvider: FMTCStore('chiayi_store').getTileProvider(),
                 // 深色濾鏡：如果目前是夜間模式，讓 OSM 配合 App 暗色主題；明亮模式則直接原圖
                 tileBuilder: (context, child, tile) {
                   if (!isDarkMode) return child;
@@ -205,6 +298,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   return Stack(
                     children: [
                       CircleLayer(circles: circles),
+                      // 跑圖軌跡
+                      if (_routePoints.isNotEmpty)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: _routePoints,
+                              strokeWidth: 4.0,
+                              color: FactionColors.gold,
+                            ),
+                          ],
+                        ),
                       MarkerLayer(markers: markers),
                     ],
                   );
@@ -375,8 +479,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                             fontSize: 14,
                           )),
                       const Spacer(),
-                      const Text('00:00',
-                          style: TextStyle(
+                      Text(
+                          '${(_elapsedSeconds ~/ 60).toString().padLeft(2, '0')}:${(_elapsedSeconds % 60).toString().padLeft(2, '0')}',
+                          style: const TextStyle(
                             color: FactionColors.gold,
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -390,7 +495,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
           // ── 右下：縮放 + 跑圖按鈕 ────────────────────────────
           Positioned(
-            bottom: 200,
+            bottom: isSimplified ? 40 : 200,
             right: 16,
             child: Column(
               children: [
@@ -423,8 +528,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 AnimatedBuilder(
                   animation: _recordingPulse,
                   builder: (_, __) => GestureDetector(
-                    onTap: () =>
-                        setState(() => _isRouteRecording = !_isRouteRecording),
+                    onTap: _toggleRouteRecording,
                     child: Container(
                       width: 60,
                       height: 60,
@@ -648,6 +752,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   void _showMissionSheet(Map<String, dynamic> m) {
     final color = _categoryColor(m['category'] as String);
+    
+    // 同陣營 20% 加成邏輯
+    final String userFaction = _faction; 
+    String missionFaction = 'none';
+    if (m['category'] == 'food') missionFaction = 'red';
+    if (m['category'] == 'heritage') missionFaction = 'green';
+    if (m['category'] == 'cafe') missionFaction = 'blue';
+    
+    final bool hasBonus = userFaction == missionFaction;
+    final int basePoints = (m['basePoints'] ?? 100) as int;
+    final int bonusPoints = hasBonus ? (basePoints * 0.2).toInt() : 0;
+    final bonusColor = FactionColors.forFaction(userFaction);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -673,9 +790,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 )),
             const SizedBox(height: 6),
             Text(
-              '基礎積分 +${m['basePoints']}',
+              '基礎積分 +$basePoints',
               style: TextStyle(color: color, fontSize: 15),
             ),
+            if (hasBonus) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${FactionColors.emojiForFaction(userFaction)} 同陣營加成 +$bonusPoints',
+                style: TextStyle(color: bonusColor, fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+            ],
             const SizedBox(height: 16),
             
             // 陣營佔領戰況

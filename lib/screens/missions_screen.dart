@@ -1,16 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../theme/theme_provider.dart';
 
 /// 任務列表頁面
 /// 對應 Firestore missions/{missionId} collection
-class MissionsScreen extends StatefulWidget {
+class MissionsScreen extends StatelessWidget {
   const MissionsScreen({super.key});
 
   @override
-  State<MissionsScreen> createState() => _MissionsScreenState();
+  Widget build(BuildContext context) {
+    final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
+    final textColor = isDarkMode ? FactionColors.textPrimary : Colors.black87;
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text('勢力任務', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: IconThemeData(color: textColor),
+      ),
+      body: const MissionsScreenBody(),
+    );
+  }
 }
 
-class _MissionsScreenState extends State<MissionsScreen>
+class MissionsScreenBody extends StatefulWidget {
+  const MissionsScreenBody({super.key});
+
+  @override
+  State<MissionsScreenBody> createState() => _MissionsScreenBodyState();
+}
+
+class _MissionsScreenBodyState extends State<MissionsScreenBody>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String _selectedCategory = 'all'; // all / food / heritage / cafe
@@ -135,135 +158,148 @@ class _MissionsScreenState extends State<MissionsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: FactionColors.darkBg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // ── 頂部標題 ──
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Row(
-                children: [
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '⚔️ 任務中心',
-                        style: TextStyle(
-                          color: FactionColors.textPrimary,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        '完成任務 · 累積軍功',
-                        style: TextStyle(
-                          color: FactionColors.textSecondary,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  // 進度圓圈
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      SizedBox(
-                        width: 52,
-                        height: 52,
-                        child: CircularProgressIndicator(
-                          value: _completedCount / _missions.length,
-                          strokeWidth: 4,
-                          backgroundColor:
-                              FactionColors.cardBorder,
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                              FactionColors.gold),
-                        ),
-                      ),
-                      Text(
-                        '$_completedCount/${_missions.length}',
-                        style: const TextStyle(
-                          color: FactionColors.gold,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+    final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
+    final textColor = isDarkMode ? FactionColors.textPrimary : Colors.black87;
+    final textSubColor = isDarkMode ? FactionColors.textSecondary : Colors.black54;
+    final cardBgColor = isDarkMode ? FactionColors.cardBg : Colors.white;
 
-            // ── 分類 Tabs ──
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: FactionColors.cardBg,
-                borderRadius: BorderRadius.circular(12),
-                border:
-                    Border.all(color: FactionColors.cardBorder),
-              ),
-              child: TabBar(
-                controller: _tabController,
-                indicator: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [FactionColors.gold, Color(0xFFFFB300)],
-                  ),
-                  borderRadius: BorderRadius.circular(10),
+    return SafeArea(
+      child: Column(
+        children: [
+          // ── 頂部標題 ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Row(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '⚔️ 任務中心',
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '完成任務 · 累積軍功',
+                      style: TextStyle(
+                        color: textSubColor,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
-                indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent,
-                labelColor: FactionColors.darkBg,
-                unselectedLabelColor: FactionColors.textSecondary,
-                labelStyle: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
+                const Spacer(),
+                // 進度圓圈
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 52,
+                      height: 52,
+                      child: CircularProgressIndicator(
+                        value: _completedCount / _missions.length,
+                        strokeWidth: 4,
+                        backgroundColor:
+                            FactionColors.cardBorder,
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                            FactionColors.gold),
+                      ),
+                    ),
+                    Text(
+                      '$_completedCount/${_missions.length}',
+                      style: const TextStyle(
+                        color: FactionColors.gold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
-                tabs: const [
-                  Tab(text: '全部'),
-                  Tab(text: '🍜 美食'),
-                  Tab(text: '🏯 古蹟'),
-                  Tab(text: '☕ 咖啡'),
-                ],
-              ),
+              ],
             ),
+          ),
 
-            const SizedBox(height: 12),
-
-            // ── 任務列表 ──
-            Expanded(
-              child: ListView.builder(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _filteredMissions.length,
-                itemBuilder: (_, i) =>
-                    _buildMissionCard(_filteredMissions[i]),
-              ),
+          // ── 分類 Tabs ──
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: cardBgColor,
+              borderRadius: BorderRadius.circular(12),
+              border:
+                  Border.all(color: isDarkMode ? FactionColors.cardBorder : Colors.grey.shade300),
             ),
-          ],
-        ),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [FactionColors.gold, Color(0xFFFFB300)],
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelColor: isDarkMode ? FactionColors.darkBg : Colors.white,
+              unselectedLabelColor: textSubColor,
+              labelStyle: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+              tabs: const [
+                Tab(text: '全部'),
+                Tab(text: '🍜 美食'),
+                Tab(text: '🏯 古蹟'),
+                Tab(text: '☕ 咖啡'),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // ── 任務列表 ──
+          Expanded(
+            child: ListView.builder(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _filteredMissions.length,
+              itemBuilder: (_, i) =>
+                  _buildMissionCard(_filteredMissions[i], isDarkMode),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildMissionCard(Map<String, dynamic> m) {
+  Widget _buildMissionCard(Map<String, dynamic> m, bool isDarkMode) {
+    final userFaction = 'red'; // 預設使用者為紅軍，日後由 Provider 取得
     final isCompleted = m['completed'] as bool;
-    final factionBonus = m['factionBonus'] as String;
-    final bonusColor = FactionColors.forFaction(factionBonus);
+    final missionFaction = m['factionBonus'] as String;
     final categoryColor = _getCategoryColor(m['category'] as String);
+
+    final cardBgColor = isDarkMode ? FactionColors.cardBg : Colors.white;
+    final borderColor = isDarkMode ? FactionColors.cardBorder : Colors.grey.shade300;
+    final textPrimary = isDarkMode ? FactionColors.textPrimary : Colors.black87;
+    final textSecondary = isDarkMode ? FactionColors.textSecondary : Colors.black54;
+
+    // 同陣營 20% 加成
+    final basePoints = m['basePoints'] as int;
+    final hasBonus = userFaction == missionFaction;
+    final bonusPoints = hasBonus ? (basePoints * 0.2).toInt() : 0;
+    final bonusColor = FactionColors.forFaction(userFaction);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: isCompleted
-            ? FactionColors.cardBg.withOpacity(0.5)
-            : FactionColors.cardBg,
+            ? cardBgColor.withOpacity(0.5)
+            : cardBgColor,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: isCompleted
-              ? FactionColors.cardBorder
+              ? borderColor
               : categoryColor.withOpacity(0.35),
           width: isCompleted ? 1 : 1.5,
         ),
@@ -281,7 +317,7 @@ class _MissionsScreenState extends State<MissionsScreen>
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
-          onTap: () => _showMissionDetail(m),
+          onTap: () => _showMissionDetail(m, isDarkMode),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -319,8 +355,8 @@ class _MissionsScreenState extends State<MissionsScreen>
                               m['name'] as String,
                               style: TextStyle(
                                 color: isCompleted
-                                    ? FactionColors.textSecondary
-                                    : FactionColors.textPrimary,
+                                    ? textSecondary
+                                    : textPrimary,
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
                                 decoration: isCompleted
@@ -338,8 +374,8 @@ class _MissionsScreenState extends State<MissionsScreen>
                       const SizedBox(height: 4),
                       Text(
                         m['description'] as String,
-                        style: const TextStyle(
-                          color: FactionColors.textSecondary,
+                        style: TextStyle(
+                          color: textSecondary,
                           fontSize: 12,
                         ),
                         maxLines: 1,
@@ -365,8 +401,8 @@ class _MissionsScreenState extends State<MissionsScreen>
                                 const SizedBox(width: 3),
                                 Text(
                                   m['distance'] as String,
-                                  style: const TextStyle(
-                                    color: FactionColors.textSecondary,
+                                  style: TextStyle(
+                                    color: textSecondary,
                                     fontSize: 11,
                                   ),
                                 ),
@@ -401,23 +437,24 @@ class _MissionsScreenState extends State<MissionsScreen>
                             ),
                           ),
                           const SizedBox(width: 8),
-                          // 陣營加成
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: bonusColor.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              '${FactionColors.emojiForFaction(factionBonus)} +${m['bonusPoints']}',
-                              style: TextStyle(
-                                color: bonusColor,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
+                          // 陣營加成 (如果同陣營則顯示)
+                          if (hasBonus)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: bonusColor.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${FactionColors.emojiForFaction(userFaction)} 同陣營 +$bonusPoints',
+                                style: TextStyle(
+                                  color: bonusColor,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                          ),
                         ],
                       ),
                     ],
@@ -438,9 +475,21 @@ class _MissionsScreenState extends State<MissionsScreen>
     );
   }
 
-  void _showMissionDetail(Map<String, dynamic> m) {
+  void _showMissionDetail(Map<String, dynamic> m, bool isDarkMode) {
+    final userFaction = 'red'; // 預設使用者為紅軍
     final isCompleted = m['completed'] as bool;
+    final missionFaction = m['factionBonus'] as String;
     final categoryColor = _getCategoryColor(m['category'] as String);
+
+    final cardBgColor = isDarkMode ? FactionColors.cardBg : Colors.white;
+    final textPrimary = isDarkMode ? FactionColors.textPrimary : Colors.black87;
+    final textSecondary = isDarkMode ? FactionColors.textSecondary : Colors.black54;
+
+    // 同陣營 20% 加成
+    final basePoints = m['basePoints'] as int;
+    final hasBonus = userFaction == missionFaction;
+    final bonusPoints = hasBonus ? (basePoints * 0.2).toInt() : 0;
+    final bonusColor = FactionColors.forFaction(userFaction);
 
     showModalBottomSheet(
       context: context,
@@ -450,7 +499,7 @@ class _MissionsScreenState extends State<MissionsScreen>
         margin: const EdgeInsets.all(12),
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: FactionColors.cardBg,
+          color: cardBgColor,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: categoryColor.withOpacity(0.4)),
         ),
@@ -465,8 +514,8 @@ class _MissionsScreenState extends State<MissionsScreen>
             const SizedBox(height: 16),
             Text(
               m['name'] as String,
-              style: const TextStyle(
-                color: FactionColors.textPrimary,
+              style: TextStyle(
+                color: textPrimary,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
@@ -474,8 +523,8 @@ class _MissionsScreenState extends State<MissionsScreen>
             const SizedBox(height: 8),
             Text(
               m['description'] as String,
-              style: const TextStyle(
-                color: FactionColors.textSecondary,
+              style: TextStyle(
+                color: textSecondary,
                 fontSize: 15,
                 height: 1.5,
               ),
@@ -488,16 +537,18 @@ class _MissionsScreenState extends State<MissionsScreen>
                   label: '基礎 +${m['basePoints']}',
                   color: FactionColors.gold,
                 ),
-                const SizedBox(width: 8),
-                _DetailChip(
-                  label: '${FactionColors.emojiForFaction(m['factionBonus'] as String)} 陣營 +${m['bonusPoints']}',
-                  color: FactionColors.forFaction(m['factionBonus'] as String),
-                ),
+                if (hasBonus) ...[
+                  const SizedBox(width: 8),
+                  _DetailChip(
+                    label: '${FactionColors.emojiForFaction(userFaction)} 同陣營加成 +$bonusPoints',
+                    color: bonusColor,
+                  ),
+                ],
                 const SizedBox(width: 8),
                 _DetailChip(
                   icon: Icons.near_me,
                   label: m['distance'] as String,
-                  color: FactionColors.textSecondary,
+                  color: textSecondary,
                 ),
               ],
             ),
