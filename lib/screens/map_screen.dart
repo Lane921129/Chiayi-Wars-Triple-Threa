@@ -1,0 +1,641 @@
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import '../theme/app_theme.dart';
+import 'faction_select_screen.dart';
+
+class MapScreen extends StatefulWidget {
+  const MapScreen({super.key});
+
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
+  final MapController _mapController = MapController();
+  bool _isRouteRecording = false;
+  final String _faction = 'red';
+
+  late AnimationController _recordingPulse;
+
+  // 嘉義市中心座標
+  static const LatLng _chiayi = LatLng(23.4800, 120.4491);
+
+  // 假資料：任務地點
+  final List<Map<String, dynamic>> _missions = [
+    {
+      'id': 'm1',
+      'name': '嘉義舊監獄',
+      'category': 'heritage',
+      'lat': 23.4812,
+      'lng': 120.4508,
+      'basePoints': 150,
+      'emoji': '🏛️',
+    },
+    {
+      'id': 'm2',
+      'name': '文化路夜市',
+      'category': 'food',
+      'lat': 23.4789,
+      'lng': 120.4418,
+      'basePoints': 100,
+      'emoji': '🍜',
+    },
+    {
+      'id': 'm3',
+      'name': '阿里山咖啡小棧',
+      'category': 'cafe',
+      'lat': 23.4765,
+      'lng': 120.4432,
+      'basePoints': 120,
+      'emoji': '☕',
+    },
+    {
+      'id': 'm4',
+      'name': '嘉義城隍廟',
+      'category': 'heritage',
+      'lat': 23.4800,
+      'lng': 120.4480,
+      'basePoints': 130,
+      'emoji': '⛩️',
+    },
+    {
+      'id': 'm5',
+      'name': '噴水圓環',
+      'category': 'food',
+      'lat': 23.4778,
+      'lng': 120.4461,
+      'basePoints': 90,
+      'emoji': '🎪',
+    },
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _recordingPulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _recordingPulse.dispose();
+    super.dispose();
+  }
+
+  Color _categoryColor(String cat) {
+    switch (cat) {
+      case 'food':
+        return FactionColors.redPrimary;
+      case 'heritage':
+        return FactionColors.greenPrimary;
+      case 'cafe':
+        return FactionColors.bluePrimary;
+      default:
+        return FactionColors.gold;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final factionColor = FactionColors.forFaction(_faction);
+
+    return Scaffold(
+      backgroundColor: FactionColors.darkBg,
+      body: Stack(
+        children: [
+          // ── OSM 地圖 ─────────────────────────────────────────
+          FlutterMap(
+            mapController: _mapController,
+            options: const MapOptions(
+              initialCenter: _chiayi,
+              initialZoom: 15.0,
+              minZoom: 10,
+              maxZoom: 18,
+            ),
+            children: [
+              // OSM Tile Layer
+              TileLayer(
+                urlTemplate:
+                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.zhuluo_app',
+                // 深色濾鏡：讓 OSM 配合 App 暗色主題
+                tileBuilder: (context, child, tile) {
+                  return ColorFiltered(
+                    colorFilter: const ColorFilter.matrix(<double>[
+                      -0.85,  0,     0,     0, 255,
+                       0,    -0.85,  0,     0, 255,
+                       0,     0,    -0.85,  0, 255,
+                       0,     0,     0,     1,   0,
+                    ]),
+                    child: child,
+                  );
+                },
+              ),
+
+              // 任務 Markers
+              MarkerLayer(
+                markers: _missions.map((m) {
+                  final color = _categoryColor(m['category'] as String);
+                  return Marker(
+                    point: LatLng(m['lat'] as double, m['lng'] as double),
+                    width: 56,
+                    height: 70,
+                    child: GestureDetector(
+                      onTap: () => _showMissionSheet(m),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2.5),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: color.withValues(alpha: 0.55),
+                                  blurRadius: 10,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Text(
+                                m['emoji'] as String,
+                                style: const TextStyle(fontSize: 22),
+                              ),
+                            ),
+                          ),
+                          // 箭頭
+                          CustomPaint(
+                            size: const Size(14, 8),
+                            painter: _MarkerArrow(color: color),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+
+          // ── 頂部浮層 HUD ─────────────────────────────────────
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Row(
+                  children: [
+                    // 陣營徽章
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const FactionSelectScreen(),
+                        ),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: FactionColors.cardBg.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: factionColor.withValues(alpha: 0.6),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              FactionColors.emojiForFaction(_faction),
+                              style: const TextStyle(fontSize: 18),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              FactionColors.nameForFaction(_faction),
+                              style: TextStyle(
+                                color: factionColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    // 積分
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: FactionColors.cardBg.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: FactionColors.gold.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.star,
+                              color: FactionColors.gold, size: 16),
+                          SizedBox(width: 4),
+                          Text(
+                            '3,850',
+                            style: TextStyle(
+                              color: FactionColors.gold,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ── 跑圖錄製 HUD ─────────────────────────────────────
+          if (_isRouteRecording)
+            Positioned(
+              top: 90,
+              left: 16,
+              right: 16,
+              child: AnimatedBuilder(
+                animation: _recordingPulse,
+                builder: (_, __) => Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: FactionColors.redDark.withValues(alpha: 0.95),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: FactionColors.redGlow.withValues(
+                          alpha: 0.4 + 0.5 * _recordingPulse.value),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: FactionColors.redGlow.withValues(
+                              alpha: 0.5 + 0.5 * _recordingPulse.value),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('跑圖記錄中',
+                          style: TextStyle(
+                            color: FactionColors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          )),
+                      const Spacer(),
+                      const Text('00:00',
+                          style: TextStyle(
+                            color: FactionColors.gold,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            fontFamily: 'monospace',
+                          )),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // ── 右下：縮放 + 跑圖按鈕 ────────────────────────────
+          Positioned(
+            bottom: 200,
+            right: 16,
+            child: Column(
+              children: [
+                // 放大
+                _MapFab(
+                  icon: Icons.add,
+                  onTap: () {
+                    final cur = _mapController.camera.zoom;
+                    _mapController.move(_mapController.camera.center, cur + 1);
+                  },
+                ),
+                const SizedBox(height: 8),
+                // 縮小
+                _MapFab(
+                  icon: Icons.remove,
+                  onTap: () {
+                    final cur = _mapController.camera.zoom;
+                    _mapController.move(_mapController.camera.center, cur - 1);
+                  },
+                ),
+                const SizedBox(height: 8),
+                // 回中心
+                _MapFab(
+                  icon: Icons.my_location,
+                  onTap: () => _mapController.move(_chiayi, 15),
+                  color: factionColor,
+                ),
+                const SizedBox(height: 12),
+                // 跑圖按鈕
+                AnimatedBuilder(
+                  animation: _recordingPulse,
+                  builder: (_, __) => GestureDetector(
+                    onTap: () =>
+                        setState(() => _isRouteRecording = !_isRouteRecording),
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _isRouteRecording
+                            ? FactionColors.redPrimary
+                            : FactionColors.cardBg,
+                        border: Border.all(
+                          color: _isRouteRecording
+                              ? FactionColors.redGlow.withValues(
+                                  alpha: 0.5 +
+                                      0.5 * _recordingPulse.value)
+                              : FactionColors.gold.withValues(alpha: 0.7),
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_isRouteRecording
+                                    ? FactionColors.redGlow
+                                    : FactionColors.gold)
+                                .withValues(alpha: 0.25),
+                            blurRadius: 14,
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        _isRouteRecording
+                            ? Icons.stop
+                            : Icons.directions_run,
+                        color: _isRouteRecording
+                            ? Colors.white
+                            : FactionColors.gold,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── 底部：附近任務快速列表 ────────────────────────────
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: _buildBottomSheet(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 任務 Bottom Sheet
+  Widget _buildBottomSheet() {
+    return Container(
+      height: 170,
+      decoration: const BoxDecoration(
+        color: FactionColors.cardBg,
+        border: Border(top: BorderSide(color: FactionColors.cardBorder)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black54,
+            blurRadius: 20,
+            offset: Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: FactionColors.cardBorder,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Text('附近任務',
+                    style: TextStyle(
+                      color: FactionColors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    )),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _missions.length,
+              itemBuilder: (_, i) {
+                final m = _missions[i];
+                final color = _categoryColor(m['category'] as String);
+                return GestureDetector(
+                  onTap: () => _showMissionSheet(m),
+                  child: Container(
+                    width: 150,
+                    margin: const EdgeInsets.only(right: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                          color: color.withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(m['emoji'] as String,
+                            style: const TextStyle(fontSize: 22)),
+                        Text(
+                          m['name'] as String,
+                          style: const TextStyle(
+                            color: FactionColors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Row(
+                          children: [
+                            const Icon(Icons.star,
+                                color: FactionColors.gold, size: 13),
+                            const SizedBox(width: 3),
+                            Text('+${m['basePoints']}',
+                                style: const TextStyle(
+                                    color: FactionColors.gold,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMissionSheet(Map<String, dynamic> m) {
+    final color = _categoryColor(m['category'] as String);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        margin: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: FactionColors.cardBg,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(m['emoji'] as String,
+                style: const TextStyle(fontSize: 52)),
+            const SizedBox(height: 12),
+            Text(m['name'] as String,
+                style: const TextStyle(
+                  color: FactionColors.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                )),
+            const SizedBox(height: 6),
+            Text(
+              '基礎積分 +${m['basePoints']}',
+              style: TextStyle(color: color, fontSize: 15),
+            ),
+            const SizedBox(height: 20),
+            // 在地圖上置中
+            OutlinedButton.icon(
+              icon: Icon(Icons.center_focus_strong, color: color),
+              label:
+                  Text('地圖定位', style: TextStyle(color: color)),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: color),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                _mapController.move(
+                  LatLng(m['lat'] as double, m['lng'] as double),
+                  17,
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('掃描打卡',
+                    style: TextStyle(fontSize: 16)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: color,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// 地圖浮動按鈕
+class _MapFab extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color? color;
+
+  const _MapFab(
+      {required this.icon, required this.onTap, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: FactionColors.cardBg.withValues(alpha: 0.95),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: (color ?? FactionColors.cardBorder)
+                .withValues(alpha: 0.5),
+          ),
+          boxShadow: const [
+            BoxShadow(color: Colors.black38, blurRadius: 6)
+          ],
+        ),
+        child: Icon(icon,
+            color: color ?? FactionColors.textSecondary, size: 20),
+      ),
+    );
+  }
+}
+
+// Marker 底部三角箭頭
+class _MarkerArrow extends CustomPainter {
+  final Color color;
+  _MarkerArrow({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = ui.Paint()..color = color;
+    final path = ui.Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..lineTo(size.width, 0)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_) => false;
+}

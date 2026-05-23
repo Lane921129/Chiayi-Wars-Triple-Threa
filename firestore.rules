@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── 公開玩家資料 ──────────────────────────────────────────────
+    // 用於排行榜、地圖上的陣營渲染
+    match /users_public/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
+    }
+
+    // ── 私人玩家資料 ──────────────────────────────────────────────
+    // 僅本人可存取（email、加密 API Key 等）
+    match /users_private/{userId} {
+      allow read, write: if request.auth.uid == userId;
+    }
+
+    // 判斷是否為管理員的共用函數
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users_private/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    // ── 任務地點資料（唯讀）──────────────────────────────────────
+    // 管理員可透過 App 的管理員模式建立/修改
+    match /missions/{missionId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
+    }
+
+    // ── 合作商家資料（唯讀）──────────────────────────────────────
+    // 管理員可透過 App 的管理員模式建立/修改
+    match /stores/{storeId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
+    }
+
+    // ── 積分流水帳 ────────────────────────────────────────────────
+    // 防作弊設計：只能新增自己的記錄，且加上積分與時間驗證
+    match /point_logs/{logId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.userId
+                    && request.resource.data.points <= 100 // 限制單次最高積分
+                    && request.resource.data.timestamp == request.time // 確保時間正確
+                    && request.resource.data.faction in ['red', 'green', 'blue']; // 確保陣營正確
+      allow update, delete: if false;
+    }
+
+    // ── 優惠券 ────────────────────────────────────────────────────
+    // 只能建立自己的券；核銷時只允許更新 isRedeemed 與 redeemedAt 兩個欄位
+    match /vouchers/{voucherId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.userId
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['isRedeemed', 'redeemedAt']);
+      allow delete: if false;
+    }
+
+    // ── 跑圖摘要（GPS 原始點存本機，這裡只存摘要）────────────────
+    // 允許更新 hasLocalFile 欄位（本機刪除檔案後同步狀態到雲端）
+    match /route_sessions/{sessionId} {
+      allow read: if request.auth != null
+                  && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.userId
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['hasLocalFile']);
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.userId;
+    }
+  }
+}

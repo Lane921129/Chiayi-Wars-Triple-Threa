@@ -1,0 +1,14 @@
+{
+    "mcpServers": {
+        "notebooklm-reader": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "notebooklm-mcp@latest"
+            ],
+            "env": {
+                "HEADLESS": "false"
+            }
+        }
+    }
+}

@@ -1,0 +1,33 @@
+name: zhuluo_app
+description: 探索諸羅：三國爭霸 App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '^3.11.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  firebase_core:
+  firebase_auth: ^6.5.1
+  cloud_firestore: ^6.4.1
+  firebase_storage:
+  google_maps_flutter:
+  geolocator: ^14.0.1
+  google_generative_ai:
+  flutter_secure_storage: ^10.2.0
+  provider:
+  google_sign_in: ^7.2.0
+  flutter_map: ^8.3.0
+  latlong2: ^0.9.1
+  firebase_app_check: ^0.4.4+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints:
+
+flutter:
+  uses-material-design: true
