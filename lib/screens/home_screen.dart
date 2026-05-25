@@ -43,6 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _screens = [
       MapScreen(key: _mapKey),
       const MissionsScreen(),
+      const ShopScreen(),
       const LeaderboardScreen(),
       const ProfileScreen(),
     ];
@@ -111,8 +112,8 @@ class _HomeScreenState extends State<HomeScreen> {
           _userData = snapshot.data!.data() as Map<String, dynamic>;
         }
 
-        // 當切換到簡化模式且目前停留在「我的(3)」時，自動回到「地圖(0)」
-        if (isSimplified && _currentIndex == 3) {
+        // 當切換到簡化模式且目前停留在超出索引的頁面時，自動回到「地圖(0)」
+        if (isSimplified && _currentIndex > 2) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) setState(() => _currentIndex = 0);
           });
@@ -171,6 +172,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icon(Icons.flag_outlined),
                       activeIcon: Icon(Icons.flag),
                       label: '任務',
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.storefront_outlined),
+                      activeIcon: Icon(Icons.storefront),
+                      label: '商店',
                     ),
                     BottomNavigationBarItem(
                       icon: Icon(Icons.leaderboard_outlined),

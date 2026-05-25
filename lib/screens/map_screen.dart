@@ -243,165 +243,229 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 },
               ),
 
-              // 即時監聽 Firestore Missions
+              // 即時監聽 Firestore Locations 與 Missions
               StreamBuilder<QuerySnapshot>(
                 stream: _firestore
-                    .collection('missions')
+                    .collection('locations')
                     .where('status', isEqualTo: 'active')
                     .snapshots(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) return const SizedBox.shrink();
+                builder: (context, locSnapshot) {
+                  return StreamBuilder<QuerySnapshot>(
+                    stream: _firestore
+                        .collection('missions')
+                        .where('status', isEqualTo: 'active')
+                        .snapshots(),
+                    builder: (context, misSnapshot) {
+                      if (locSnapshot.hasError || misSnapshot.hasError) return const SizedBox.shrink();
+                      if (!locSnapshot.hasData || !misSnapshot.hasData) return const SizedBox.shrink();
 
-                  final docs = snapshot.data!.docs;
-                  
-                  final filteredDocs = docs.where((doc) {
-                    if (_missionFilter == 'all') return true;
-                    final data = doc.data() as Map<String, dynamic>;
-                    return data['category'] == _missionFilter;
-                  }).toList();
-
-                  // 1. 領地控制圓圈 (CircleLayer)
-                  final circles = filteredDocs.map((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    
-                    // 動態計算佔領陣營
-                    final checkIns = data['checkInsByFaction'] as Map<String, dynamic>? ?? {'red': 0, 'green': 0, 'blue': 0};
-                    int r = (checkIns['red'] ?? 0) as int;
-                    int g = (checkIns['green'] ?? 0) as int;
-                    int b = (checkIns['blue'] ?? 0) as int;
-                    
-                    Color color = Colors.grey; // 預設無人佔領
-                    if (r > g && r > b) {
-                      color = FactionColors.redPrimary;
-                    } else if (g > r && g > b) {
-                      color = FactionColors.greenPrimary;
-                    } else if (b > r && b > g) {
-                      color = FactionColors.bluePrimary;
-                    } else if (r > 0 || g > 0 || b > 0) {
-                      color = Colors.white; // 平手
-                    }
-
-                    final totalCheckIns = data['totalCheckIns'] ?? 0;
-                    final radius = (50.0 + (totalCheckIns * 5)).clamp(50.0, 300.0);
-                    
-                    return CircleMarker(
-                      point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
-                      radius: radius,
-                      useRadiusInMeter: true,
-                      color: color.withValues(alpha: 0.35),
-                      borderColor: color.withValues(alpha: 0.9),
-                      borderStrokeWidth: 3,
-                    );
-                  }).toList();
-
-                  // 2. 任務點地標 (MarkerLayer)
-                  final markers = filteredDocs.map((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final color = _categoryColor(data['category'] ?? '');
-                    
-                    // 決定 Emoji
-                    String emoji = '📍';
-                    if (data['category'] == 'heritage') emoji = '🏛️';
-                    if (data['category'] == 'food') emoji = '🍜';
-                    if (data['category'] == 'cafe') emoji = '☕';
-                    
-                    return Marker(
-                      point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
-                      width: 56,
-                      height: 70,
-                      child: GestureDetector(
-                        onTap: () {
-                          data['id'] = doc.id; // 帶入 ID
-                          data['emoji'] = emoji;
-                          _showMissionSheet(data);
-                        },
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 46,
-                              height: 46,
-                              decoration: BoxDecoration(
-                                color: color,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2.5),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: color.withValues(alpha: 0.55),
-                                    blurRadius: 10,
-                                    spreadRadius: 2,
-                                  ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Text(
-                                  emoji,
-                                  style: const TextStyle(fontSize: 22),
-                                ),
-                              ),
-                            ),
-                            // 箭頭
-                            CustomPaint(
-                              size: const Size(14, 8),
-                              painter: _MarkerArrow(color: color),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList();
-
-                  return Stack(
-                    children: [
-                      if (_showFactionLayer)
-                        PolygonLayer(
-                          polygons: _buildFactionPolygons(docs),
-                        ),
-                      CircleLayer(circles: circles),
-                      // 跑圖軌跡
-                      if (_routePoints.isNotEmpty)
-                        PolylineLayer(
-                          polylines: [
-                            Polyline(
-                              points: _routePoints,
-                              strokeWidth: 4.0,
-                              color: FactionColors.gold,
-                            ),
-                          ],
-                        ),
-                      MarkerLayer(markers: markers),
+                      final locDocs = locSnapshot.data!.docs;
+                      final misDocs = misSnapshot.data!.docs;
                       
-                      // 公車動態 Markers
-                      if (_showBus)
-                        Consumer<BusService>(
-                          builder: (context, busService, child) {
-                            return MarkerLayer(
-                              markers: busService.busStops.map((stop) {
-                                return Marker(
-                                  point: stop.position,
-                                  width: 40,
-                                  height: 40,
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('${stop.name}: ${stop.estimateTime > 0 ? "約 ${stop.estimateTime ~/ 60} 分鐘到站" : "未發車或末班車已過"}')),
-                                      );
-                                    },
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.blueAccent,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(color: Colors.white, width: 2),
-                                      ),
-                                      child: const Icon(Icons.directions_bus, color: Colors.white, size: 20),
-                                    ),
+                      final filteredLocDocs = locDocs.where((doc) {
+                        if (_missionFilter == 'all') return true;
+                        final data = doc.data() as Map<String, dynamic>;
+                        return data['category'] == _missionFilter;
+                      }).toList();
+
+                      final filteredMisDocs = misDocs.where((doc) {
+                        if (_missionFilter == 'all') return true;
+                        final data = doc.data() as Map<String, dynamic>;
+                        return data['category'] == _missionFilter;
+                      }).toList();
+
+                      // 1. 領地控制圓圈 (CircleLayer) (僅限 locations)
+                      final circles = filteredLocDocs.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        
+                        // 動態計算佔領陣營
+                        final checkIns = data['checkInsByFaction'] as Map<String, dynamic>? ?? {'red': 0, 'green': 0, 'blue': 0};
+                        int r = (checkIns['red'] ?? 0) as int;
+                        int g = (checkIns['green'] ?? 0) as int;
+                        int b = (checkIns['blue'] ?? 0) as int;
+                        
+                        Color color = Colors.grey; // 預設無人佔領
+                        if (r > g && r > b) {
+                          color = FactionColors.redPrimary;
+                        } else if (g > r && g > b) {
+                          color = FactionColors.greenPrimary;
+                        } else if (b > r && b > g) {
+                          color = FactionColors.bluePrimary;
+                        } else if (r > 0 || g > 0 || b > 0) {
+                          color = Colors.white; // 平手
+                        }
+
+                        final totalCheckIns = data['totalCheckIns'] ?? 0;
+                        final radius = (50.0 + (totalCheckIns * 5)).clamp(50.0, 300.0);
+                        
+                        return CircleMarker(
+                          point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
+                          radius: radius,
+                          useRadiusInMeter: true,
+                          color: color.withValues(alpha: 0.35),
+                          borderColor: color.withValues(alpha: 0.9),
+                          borderStrokeWidth: 3,
+                        );
+                      }).toList();
+
+                      // 2. 任務點地標 (MarkerLayer) - 合併 Locations 與 Missions
+                      List<Marker> markers = [];
+                      
+                      // 加入 Locations Markers
+                      markers.addAll(filteredLocDocs.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final color = _categoryColor(data['category'] ?? '');
+                        
+                        String emoji = '📍';
+                        if (data['category'] == 'heritage') emoji = '🏛️';
+                        if (data['category'] == 'food') emoji = '🍜';
+                        if (data['category'] == 'cafe') emoji = '☕';
+                        
+                        return Marker(
+                          point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
+                          width: 56,
+                          height: 70,
+                          child: GestureDetector(
+                            onTap: () {
+                              data['id'] = doc.id;
+                              data['emoji'] = emoji;
+                              _showMissionSheet(data);
+                            },
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 46,
+                                  height: 46,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2.5),
+                                    boxShadow: [
+                                      BoxShadow(color: color.withValues(alpha: 0.55), blurRadius: 10, spreadRadius: 2),
+                                    ],
                                   ),
+                                  child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
+                                ),
+                                CustomPaint(size: const Size(14, 8), painter: _MarkerArrow(color: color)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }));
+
+                      // 加入 Missions Markers (帶有黃色圈圈與驚嘆號)
+                      markers.addAll(filteredMisDocs.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        if (!data.containsKey('lat') || !data.containsKey('lng')) return null;
+                        
+                        final color = _categoryColor(data['category'] ?? '');
+                        String emoji = data['imageEmoji'] ?? '📍';
+                        
+                        return Marker(
+                          point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
+                          width: 66, // 稍微大一點以容納黃色外圈
+                          height: 80,
+                          child: GestureDetector(
+                            onTap: () {
+                              data['id'] = doc.id;
+                              data['emoji'] = emoji;
+                              _showMissionSheet(data);
+                            },
+                            child: Stack(
+                              alignment: Alignment.topCenter,
+                              children: [
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 50,
+                                      height: 50,
+                                      decoration: BoxDecoration(
+                                        color: color,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: FactionColors.gold, width: 3.5), // 黃色圓圈
+                                        boxShadow: [
+                                          BoxShadow(color: FactionColors.gold.withValues(alpha: 0.6), blurRadius: 12, spreadRadius: 3),
+                                        ],
+                                      ),
+                                      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
+                                    ),
+                                    CustomPaint(size: const Size(14, 8), painter: _MarkerArrow(color: FactionColors.gold)),
+                                  ],
+                                ),
+                                // 驚嘆號小徽章
+                                Positioned(
+                                  top: 0,
+                                  right: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.red,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.priority_high, color: Colors.white, size: 14),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).whereType<Marker>());
+
+                      return Stack(
+                        children: [
+                          if (_showFactionLayer)
+                            PolygonLayer(
+                              polygons: _buildFactionPolygons(locDocs),
+                            ),
+                          CircleLayer(circles: circles),
+                          // 跑圖軌跡
+                          if (_routePoints.isNotEmpty)
+                            PolylineLayer(
+                              polylines: [
+                                Polyline(
+                                  points: _routePoints,
+                                  strokeWidth: 4.0,
+                                  color: FactionColors.gold,
+                                ),
+                              ],
+                            ),
+                          MarkerLayer(markers: markers),
+                          
+                          // 公車動態 Markers
+                          if (_showBus)
+                            Consumer<BusService>(
+                              builder: (context, busService, child) {
+                                return MarkerLayer(
+                                  markers: busService.busStops.map((stop) {
+                                    return Marker(
+                                      point: stop.position,
+                                      width: 40,
+                                      height: 40,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('${stop.name}: ${stop.estimateTime > 0 ? "約 ${stop.estimateTime ~/ 60} 分鐘到站" : "未發車或末班車已過"}')),
+                                          );
+                                        },
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: Colors.blueAccent,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(color: Colors.white, width: 2),
+                                          ),
+                                          child: const Icon(Icons.directions_bus, color: Colors.white, size: 20),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
                                 );
-                              }).toList(),
-                            );
-                          },
-                        ),
-                    ],
+                              },
+                            ),
+                        ],
+                      );
+                    },
                   );
                 },
               ),
@@ -935,6 +999,12 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                               onTap: () {
                                 data['id'] = docs[i].id;
                                 data['emoji'] = emoji;
+                                if (data['lat'] != null && data['lng'] != null) {
+                                  _mapController.move(
+                                    LatLng((data['lat'] as num).toDouble(), (data['lng'] as num).toDouble()),
+                                    17,
+                                  );
+                                }
                                 _showMissionSheet(data);
                               },
                             ),
@@ -961,6 +1031,12 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                           onTap: () {
                             data['id'] = docs[i].id;
                             data['emoji'] = emoji;
+                            if (data['lat'] != null && data['lng'] != null) {
+                              _mapController.move(
+                                LatLng((data['lat'] as num).toDouble(), (data['lng'] as num).toDouble()),
+                                17,
+                              );
+                            }
                             _showMissionSheet(data);
                           },
                           child: Container(
@@ -1083,11 +1159,13 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: () {
-                Navigator.pop(context);
-                _mapController.move(
-                  LatLng(m['lat'] as double, m['lng'] as double),
-                  17,
-                );
+                if (m['lat'] != null && m['lng'] != null) {
+                  Navigator.pop(context);
+                  _mapController.move(
+                    LatLng((m['lat'] as num).toDouble(), (m['lng'] as num).toDouble()),
+                    17,
+                  );
+                }
               },
             ),
             const SizedBox(height: 10),

@@ -135,6 +135,10 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDarkMode ? FactionColors.cardBg : Colors.white;
+    final textColor = isDarkMode ? FactionColors.textPrimary : Colors.black87;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -143,7 +147,7 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
         _buildItem(
           widget.showFactionLayer ? Icons.layers : Icons.layers_outlined, 
           'map_layer', 
-          widget.showFactionLayer ? Colors.orangeAccent : FactionColors.cardBg, 
+          widget.showFactionLayer ? Colors.orangeAccent : bgColor, 
           405, 
           widget.onToggleLayer, 
           iconColor: widget.showFactionLayer ? Colors.white : widget.factionColor
@@ -153,7 +157,7 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
         _buildItem(
           Icons.add, 
           'map_zoom_in', 
-          FactionColors.cardBg, 
+          bgColor, 
           350, 
           widget.onZoomIn, 
           iconColor: widget.factionColor
@@ -163,7 +167,7 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
         _buildItem(
           Icons.remove, 
           'map_zoom_out', 
-          FactionColors.cardBg, 
+          bgColor, 
           295, 
           widget.onZoomOut, 
           iconColor: widget.factionColor
@@ -183,17 +187,17 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
         _buildItem(
           widget.showBus ? Icons.directions_bus : Icons.directions_bus_outlined,
           'map_bus',
-          widget.showBus ? Colors.blueAccent : FactionColors.cardBg,
+          widget.showBus ? Colors.blueAccent : bgColor,
           185,
           widget.onBus,
-          iconColor: widget.showBus ? Colors.white : FactionColors.textPrimary,
+          iconColor: widget.showBus ? Colors.white : textColor,
         ),
         
         // 定位回中心
         _buildItem(
           Icons.my_location,
           'map_locate',
-          FactionColors.cardBg,
+          bgColor,
           130,
           widget.onLocate,
           iconColor: widget.factionColor,
@@ -231,7 +235,7 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
                       shape: BoxShape.circle,
                       color: widget.isRouteRecording
                           ? FactionColors.redPrimary
-                          : FactionColors.cardBg,
+                          : bgColor,
                       border: Border.all(
                         color: widget.isRouteRecording
                             ? FactionColors.redGlow.withValues(

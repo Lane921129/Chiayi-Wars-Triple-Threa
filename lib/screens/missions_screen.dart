@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import 'ai_chat_bottom_sheet.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// 任務列表頁面
 /// 對應 Firestore missions/{missionId} collection
@@ -39,88 +40,6 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
   late TabController _tabController;
   String _selectedCategory = 'all'; // all / food / heritage / cafe
 
-  // 假資料：missions collection 範例資料
-  final List<Map<String, dynamic>> _missions = [
-    {
-      'id': 'm1',
-      'name': '嘉義舊監獄',
-      'description': '建於1919年的日式監獄建築，現為國定古蹟，見證諸羅百年歷史。',
-      'category': 'heritage',
-      'factionBonus': 'green',
-      'basePoints': 150,
-      'bonusPoints': 50,
-      'status': 'active',
-      'completed': false,
-      'imageEmoji': '🏛️',
-      'distance': '320m',
-    },
-    {
-      'id': 'm2',
-      'name': '文化路夜市雞肉飯',
-      'description': '嘉義最具代表性的在地美食，飄香超過五十年的老字號雞肉飯。',
-      'category': 'food',
-      'factionBonus': 'red',
-      'basePoints': 100,
-      'bonusPoints': 40,
-      'status': 'active',
-      'completed': true,
-      'imageEmoji': '🍜',
-      'distance': '180m',
-    },
-    {
-      'id': 'm3',
-      'name': '阿里山咖啡小棧',
-      'description': '採用海拔1200公尺高山咖啡豆，每一杯都是嘉義山林的精華。',
-      'category': 'cafe',
-      'factionBonus': 'blue',
-      'basePoints': 120,
-      'bonusPoints': 45,
-      'status': 'active',
-      'completed': false,
-      'imageEmoji': '☕',
-      'distance': '500m',
-    },
-    {
-      'id': 'm4',
-      'name': '嘉義城隍廟',
-      'description': '清朝建立的城隍廟，是在地居民的精神信仰中心，廟前小吃一條街不可錯過。',
-      'category': 'heritage',
-      'factionBonus': 'green',
-      'basePoints': 130,
-      'bonusPoints': 50,
-      'status': 'active',
-      'completed': false,
-      'imageEmoji': '⛩️',
-      'distance': '750m',
-    },
-    {
-      'id': 'm5',
-      'name': '噴水圓環創意市集',
-      'description': '嘉義市中心地標，週末有在地文創市集，充滿創意與活力。',
-      'category': 'food',
-      'factionBonus': 'red',
-      'basePoints': 90,
-      'bonusPoints': 35,
-      'status': 'active',
-      'completed': false,
-      'imageEmoji': '🎪',
-      'distance': '1.2km',
-    },
-    {
-      'id': 'm6',
-      'name': '蘭潭咖啡漫步',
-      'description': '湖畔咖啡廳，坐享蘭潭日落美景，是嘉義文青最愛的祕境。',
-      'category': 'cafe',
-      'factionBonus': 'blue',
-      'basePoints': 140,
-      'bonusPoints': 55,
-      'status': 'active',
-      'completed': true,
-      'imageEmoji': '🌅',
-      'distance': '2.1km',
-    },
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -147,16 +66,6 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
     super.dispose();
   }
 
-  List<Map<String, dynamic>> get _filteredMissions {
-    if (_selectedCategory == 'all') return _missions;
-    return _missions
-        .where((m) => m['category'] == _selectedCategory)
-        .toList();
-  }
-
-  int get _completedCount =>
-      _missions.where((m) => m['completed'] == true).length;
-
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
@@ -165,119 +74,143 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
     final cardBgColor = isDarkMode ? FactionColors.cardBg : Colors.white;
 
     return SafeArea(
-      child: Column(
-        children: [
-          // ── 頂部標題 ──
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-            child: Row(
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('missions').where('status', isEqualTo: 'active').snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final allDocs = snapshot.data!.docs;
+          final allMissions = allDocs.map((d) {
+            final data = d.data() as Map<String, dynamic>;
+            data['id'] = d.id;
+            return data;
+          }).toList();
+
+          final filteredMissions = _selectedCategory == 'all'
+              ? allMissions
+              : allMissions.where((m) => m['category'] == _selectedCategory).toList();
+
+          final completedCount = allMissions.where((m) => m['completed'] == true).length;
+          final totalCount = allMissions.length;
+
+          return Column(
+            children: [
+              // ── 頂部標題 ──
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Row(
                   children: [
-                    Text(
-                      '⚔️ 任務中心',
-                      style: TextStyle(
-                        color: textColor,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '⚔️ 任務中心',
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '完成任務 · 累積軍功',
+                          style: TextStyle(
+                            color: textSubColor,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      '完成任務 · 累積軍功',
-                      style: TextStyle(
-                        color: textSubColor,
-                        fontSize: 13,
+                    const Spacer(),
+                    // 進度圓圈
+                    if (totalCount > 0)
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            width: 52,
+                            height: 52,
+                            child: CircularProgressIndicator(
+                              value: completedCount / totalCount,
+                              strokeWidth: 4,
+                              backgroundColor:
+                                  FactionColors.cardBorder,
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                  FactionColors.gold),
+                            ),
+                          ),
+                          Text(
+                            '$completedCount/$totalCount',
+                            style: const TextStyle(
+                              color: FactionColors.gold,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
                   ],
                 ),
-                const Spacer(),
-                // 進度圓圈
-                Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 52,
-                      height: 52,
-                      child: CircularProgressIndicator(
-                        value: _completedCount / _missions.length,
-                        strokeWidth: 4,
-                        backgroundColor:
-                            FactionColors.cardBorder,
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                            FactionColors.gold),
-                      ),
+              ),
+
+              // ── 分類 Tabs ──
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: cardBgColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: isDarkMode ? FactionColors.cardBorder : Colors.grey.shade300),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  indicator: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [FactionColors.gold, Color(0xFFFFB300)],
                     ),
-                    Text(
-                      '$_completedCount/${_missions.length}',
-                      style: const TextStyle(
-                        color: FactionColors.gold,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  labelColor: isDarkMode ? FactionColors.darkBg : Colors.white,
+                  unselectedLabelColor: textSubColor,
+                  labelStyle: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                  tabs: const [
+                    Tab(text: '全部'),
+                    Tab(text: '🍜 美食'),
+                    Tab(text: '🏯 古蹟'),
+                    Tab(text: '☕ 咖啡'),
                   ],
                 ),
-              ],
-            ),
-          ),
+              ),
 
-          // ── 分類 Tabs ──
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: cardBgColor,
-              borderRadius: BorderRadius.circular(12),
-              border:
-                  Border.all(color: isDarkMode ? FactionColors.cardBorder : Colors.grey.shade300),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              indicator: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [FactionColors.gold, Color(0xFFFFB300)],
+              const SizedBox(height: 12),
+
+              // ── 任務列表 ──
+              Expanded(
+                child: ListView.builder(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: filteredMissions.length,
+                  itemBuilder: (_, i) =>
+                      _buildMissionCard(filteredMissions[i], isDarkMode),
                 ),
-                borderRadius: BorderRadius.circular(10),
               ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: Colors.transparent,
-              labelColor: isDarkMode ? FactionColors.darkBg : Colors.white,
-              unselectedLabelColor: textSubColor,
-              labelStyle: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-              tabs: const [
-                Tab(text: '全部'),
-                Tab(text: '🍜 美食'),
-                Tab(text: '🏯 古蹟'),
-                Tab(text: '☕ 咖啡'),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // ── 任務列表 ──
-          Expanded(
-            child: ListView.builder(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _filteredMissions.length,
-              itemBuilder: (_, i) =>
-                  _buildMissionCard(_filteredMissions[i], isDarkMode),
-            ),
-          ),
-        ],
+            ],
+          );
+        }
       ),
     );
   }
 
   Widget _buildMissionCard(Map<String, dynamic> m, bool isDarkMode) {
     final userFaction = 'red'; // 預設使用者為紅軍，日後由 Provider 取得
-    final isCompleted = m['completed'] as bool;
-    final missionFaction = m['factionBonus'] as String;
+    final isCompleted = m['completed'] ?? false;
+    final missionFaction = m['factionBonus'] ?? 'none';
     final categoryColor = _getCategoryColor(m['category'] as String);
 
     final cardBgColor = isDarkMode ? FactionColors.cardBg : Colors.white;
@@ -286,9 +219,9 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
     final textSecondary = isDarkMode ? FactionColors.textSecondary : Colors.black54;
 
     // 同陣營 20% 加成
-    final basePoints = m['basePoints'] as int;
+    final basePoints = m['basePoints'] ?? 100;
     final hasBonus = userFaction == missionFaction;
-    final bonusPoints = hasBonus ? (basePoints * 0.2).toInt() : 0;
+    final bonusPoints = m['bonusPoints'] ?? (hasBonus ? (basePoints * 0.2).toInt() : 0);
     final bonusColor = FactionColors.forFaction(userFaction);
 
     return Container(
@@ -335,7 +268,7 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                   ),
                   child: Center(
                     child: Text(
-                      m['imageEmoji'] as String,
+                      m['imageEmoji'] ?? '📝',
                       style: TextStyle(
                         fontSize: 28,
                         color: isCompleted ? Colors.grey : null,
@@ -353,7 +286,7 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                         children: [
                           Expanded(
                             child: Text(
-                              m['name'] as String,
+                              m['name'] ?? '未知任務',
                               style: TextStyle(
                                 color: isCompleted
                                     ? textSecondary
@@ -374,7 +307,7 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        m['description'] as String,
+                        m['description'] ?? '',
                         style: TextStyle(
                           color: textSecondary,
                           fontSize: 12,
@@ -401,7 +334,7 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                                     size: 12),
                                 const SizedBox(width: 3),
                                 Text(
-                                  m['distance'] as String,
+                                  m['distance'] ?? '未知距離',
                                   style: TextStyle(
                                     color: textSecondary,
                                     fontSize: 11,
@@ -478,18 +411,18 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
 
   void _showMissionDetail(Map<String, dynamic> m, bool isDarkMode) {
     final userFaction = 'red'; // 預設使用者為紅軍
-    final isCompleted = m['completed'] as bool;
-    final missionFaction = m['factionBonus'] as String;
-    final categoryColor = _getCategoryColor(m['category'] as String);
+    final isCompleted = m['completed'] ?? false;
+    final missionFaction = m['factionBonus'] ?? 'none';
+    final categoryColor = _getCategoryColor(m['category'] ?? '');
 
     final cardBgColor = isDarkMode ? FactionColors.cardBg : Colors.white;
     final textPrimary = isDarkMode ? FactionColors.textPrimary : Colors.black87;
     final textSecondary = isDarkMode ? FactionColors.textSecondary : Colors.black54;
 
     // 同陣營 20% 加成
-    final basePoints = m['basePoints'] as int;
+    final basePoints = m['basePoints'] ?? 100;
     final hasBonus = userFaction == missionFaction;
-    final bonusPoints = hasBonus ? (basePoints * 0.2).toInt() : 0;
+    final bonusPoints = m['bonusPoints'] ?? (hasBonus ? (basePoints * 0.2).toInt() : 0);
     final bonusColor = FactionColors.forFaction(userFaction);
 
     showModalBottomSheet(
@@ -509,12 +442,12 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Center(
-              child: Text(m['imageEmoji'] as String,
+              child: Text(m['imageEmoji'] ?? '📝',
                   style: const TextStyle(fontSize: 60)),
             ),
             const SizedBox(height: 16),
             Text(
-              m['name'] as String,
+              m['name'] ?? '未知任務',
               style: TextStyle(
                 color: textPrimary,
                 fontSize: 24,
@@ -523,7 +456,7 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
             ),
             const SizedBox(height: 8),
             Text(
-              m['description'] as String,
+              m['description'] ?? '',
               style: TextStyle(
                 color: textSecondary,
                 fontSize: 15,
@@ -548,7 +481,7 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                 const SizedBox(width: 8),
                 _DetailChip(
                   icon: Icons.near_me,
-                  label: m['distance'] as String,
+                  label: m['distance'] ?? '未知距離',
                   color: textSecondary,
                 ),
               ],

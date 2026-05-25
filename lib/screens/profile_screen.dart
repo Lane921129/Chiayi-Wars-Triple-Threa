@@ -7,6 +7,8 @@ import '../services/map_cache_service.dart';
 import 'performance_screen.dart';
 import 'api_key_screen.dart';
 import '../services/seed_service.dart';
+import '../services/auth_service.dart';
+import 'admin_panel_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -136,33 +138,91 @@ class ProfileScreen extends StatelessWidget {
                         );
                       },
                     ),
-                    // 開發人員模式
-                    ListTile(
-                      leading: Icon(Icons.developer_mode, color: isDarkMode ? FactionColors.textPrimary : Colors.black87),
-                      title: Text('開發人員模式', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
-                      trailing: Switch(
-                        value: themeProvider.isDeveloperMode,
-                        activeThumbColor: Colors.greenAccent,
-                        onChanged: (val) {
-                          themeProvider.setDeveloperMode(val);
-                        },
-                      ),
+                    // 管理員與開發專區 (需驗證權限)
+                    FutureBuilder<bool>(
+                      future: AuthService().isAdmin(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const SizedBox.shrink();
+                        }
+                        final isAdmin = snapshot.data ?? false;
+                        if (!isAdmin) return const SizedBox.shrink();
+
+                        return Column(
+                          children: [
+                            const Divider(color: Colors.grey),
+                            ListTile(
+                              leading: const Icon(Icons.admin_panel_settings, color: Colors.deepPurpleAccent),
+                              title: const Text('管理員專區', style: TextStyle(color: Colors.deepPurpleAccent, fontWeight: FontWeight.bold)),
+                              trailing: const Icon(Icons.chevron_right, color: Colors.deepPurpleAccent),
+                              onTap: () {
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminPanelScreen()));
+                              },
+                            ),
+                            ListTile(
+                              leading: Icon(Icons.developer_mode, color: isDarkMode ? FactionColors.textPrimary : Colors.black87),
+                              title: Text('開發人員模式', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                              trailing: Switch(
+                                value: themeProvider.isDeveloperMode,
+                                activeThumbColor: Colors.greenAccent,
+                                onChanged: (val) {
+                                  themeProvider.setDeveloperMode(val);
+                                },
+                              ),
+                            ),
+                            if (themeProvider.isDeveloperMode)
+                              ListTile(
+                                leading: const Icon(Icons.data_array, color: Colors.greenAccent),
+                                title: const Text('上傳測試資料 (種子)', style: TextStyle(color: Colors.greenAccent)),
+                                onTap: () async {
+                                  showDialog(
+                                    context: context,
+                                    barrierDismissible: false,
+                                    builder: (ctx) {
+                                      String currentMsg = '準備中...';
+                                      return StatefulBuilder(
+                                        builder: (context, setState) {
+                                          // Start the seed process only once
+                                          if (currentMsg == '準備中...') {
+                                            SeedService.seedLocationsAndMissions(
+                                              onProgress: (msg) {
+                                                if (!context.mounted) return;
+                                                setState(() {
+                                                  currentMsg = msg;
+                                                });
+                                              },
+                                            ).then((_) {
+                                              if (!context.mounted) return;
+                                              Navigator.pop(context); // Close dialog
+                                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 測試資料上傳成功！請重啟APP或查看地圖')));
+                                            }).catchError((e) {
+                                              if (!context.mounted) return;
+                                              Navigator.pop(context); // Close dialog
+                                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 錯誤: $e')));
+                                            });
+                                          }
+                                          return AlertDialog(
+                                            title: const Text('上傳測試資料'),
+                                            content: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const CircularProgressIndicator(),
+                                                const SizedBox(height: 16),
+                                                Text(currentMsg, textAlign: TextAlign.center),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                            const Divider(color: Colors.grey),
+                          ],
+                        );
+                      },
                     ),
-
-                    // 測試資料上傳 (僅開發人員模式可見)
-                    if (themeProvider.isDeveloperMode)
-                      ListTile(
-                        leading: const Icon(Icons.data_array, color: Colors.greenAccent),
-                        title: const Text('上傳測試資料 (種子)', style: TextStyle(color: Colors.greenAccent)),
-                        onTap: () async {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('正在上傳測試資料...')));
-                          await SeedService.seedMissions();
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('測試資料上傳成功！請查看地圖圖層變化')));
-                        },
-                      ),
-
-                    const Divider(color: Colors.grey),
 
                     // 績效與跑圖紀錄
                     ListTile(

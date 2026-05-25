@@ -5,8 +5,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 
+class ShopScreen extends StatelessWidget {
+  const ShopScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: SafeArea(
+        child: ShopBottomSheet(isFullScreen: true),
+      ),
+    );
+  }
+}
+
 class ShopBottomSheet extends StatefulWidget {
-  const ShopBottomSheet({super.key});
+  final bool isFullScreen;
+  const ShopBottomSheet({super.key, this.isFullScreen = false});
 
   @override
   State<ShopBottomSheet> createState() => _ShopBottomSheetState();
@@ -76,10 +90,10 @@ class _ShopBottomSheetState extends State<ShopBottomSheet> {
     final textColor = isDarkMode ? Colors.white : Colors.black87;
 
     return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
+      height: widget.isFullScreen ? null : MediaQuery.of(context).size.height * 0.8,
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: const BorderRadius.only(
+        borderRadius: widget.isFullScreen ? BorderRadius.zero : const BorderRadius.only(
           topLeft: Radius.circular(24),
           topRight: Radius.circular(24),
         ),
@@ -87,17 +101,18 @@ class _ShopBottomSheetState extends State<ShopBottomSheet> {
       child: Column(
         children: [
           // Handle
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: isDarkMode ? Colors.white24 : Colors.black26,
-                borderRadius: BorderRadius.circular(2),
+          if (!widget.isFullScreen)
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDarkMode ? Colors.white24 : Colors.black26,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             child: Row(
@@ -135,10 +150,11 @@ class _ShopBottomSheetState extends State<ShopBottomSheet> {
                       );
                     },
                   ),
-                IconButton(
-                  icon: Icon(Icons.close, color: textColor),
-                  onPressed: () => Navigator.pop(context),
-                ),
+                  if (!widget.isFullScreen)
+                    IconButton(
+                      icon: Icon(Icons.close, color: textColor),
+                      onPressed: () => Navigator.pop(context),
+                    ),
               ],
             ),
           ),

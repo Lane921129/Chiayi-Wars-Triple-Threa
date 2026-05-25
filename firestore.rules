@@ -2,83 +2,103 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── 公開玩家資料 ──────────────────────────────────────────────
-    // 用於排行榜、地圖上的陣營渲染
+    // ── 判斷是否為管理員（讀取 users_private 中的 isAdmin 欄位）
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users_private/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    // ── 公開玩家資料（排行榜、地圖渲染）
     match /users_public/{userId} {
       allow read: if request.auth != null;
-      allow write: if request.auth.uid == userId;
+      // 允許本人修改自己的資料，也允許管理員修改（為了寫入虛擬排行榜資料）
+      allow write: if (request.auth != null && request.auth.uid == userId) || isAdmin();
     }
 
-    // ── 私人玩家資料 ──────────────────────────────────────────────
-    // 僅本人可存取（email、加密 API Key 等）
+    // ── 私人玩家資料（email、isAdmin、API Key 備援）
     match /users_private/{userId} {
-      allow read, write: if request.auth.uid == userId;
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // 判斷是否為管理員的共用函數
-    function isAdmin() {
-      return get(/databases/$(database)/documents/users_private/$(request.auth.uid)).data.isAdmin == true;
-    }
-
-    // ── 任務地點資料（唯讀）──────────────────────────────────────
-    // 管理員可透過 App 的管理員模式建立/修改
+    // ── 任務地點（管理員可寫，玩家唯讀）
     match /missions/{missionId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && isAdmin();
+      allow write: if isAdmin();
     }
 
-    // ── 合作商家資料（唯讀）──────────────────────────────────────
-    // 管理員可透過 App 的管理員模式建立/修改
+    // ── 合作商家（管理員可寫，玩家唯讀）
     match /stores/{storeId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && isAdmin();
+      allow write: if isAdmin();
     }
 
-    // ── 積分流水帳 ────────────────────────────────────────────────
-    // 防作弊設計：只能新增自己的記錄，且加上積分與時間驗證
+    // ── 商店道具（管理員可寫，玩家唯讀）
+    match /shop_items/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // ── 積分流水帳（防作弊：只能新增、不能修改刪除）
     match /point_logs/{logId} {
-      allow read: if request.auth != null
-                  && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null
-                    && request.auth.uid == request.resource.data.userId
-                    && request.resource.data.points <= 100 // 限制單次最高積分
-                    && request.resource.data.timestamp == request.time // 確保時間正確
-                    && request.resource.data.faction in ['red', 'green', 'blue']; // 確保陣營正確
+      allow read: if request.auth != null &&
+                  request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId &&
+                    request.resource.data.points <= 100 &&
+                    request.resource.data.timestamp == request.time &&
+                    request.resource.data.faction in ['red', 'green', 'blue'];
       allow update, delete: if false;
     }
 
-    // ── 優惠券 ────────────────────────────────────────────────────
-    // 只能建立自己的券；核銷時只允許更新 isRedeemed 與 redeemedAt 兩個欄位
+    // ── 優惠券（只能讀自己的；核銷只能更新兩個欄位）
     match /vouchers/{voucherId} {
-      allow read: if request.auth != null
-                  && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null
-                    && request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth != null
-                    && request.auth.uid == resource.data.userId
-                    && request.resource.data.diff(resource.data).affectedKeys()
+      allow read: if request.auth != null &&
+                  request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null &&
+                    request.auth.uid == resource.data.userId &&
+                    request.resource.data.diff(resource.data).affectedKeys()
                        .hasOnly(['isRedeemed', 'redeemedAt']);
       allow delete: if false;
     }
 
-    // ── 跑圖摘要（GPS 原始點存本機，這裡只存摘要）────────────────
-    // 允許更新 hasLocalFile 欄位（本機刪除檔案後同步狀態到雲端）
+    // ── 跑圖摘要（只能讀寫自己的）
     match /route_sessions/{sessionId} {
-      allow read: if request.auth != null
-                  && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null
-                    && request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth != null
-                    && request.auth.uid == resource.data.userId
-                    && request.resource.data.diff(resource.data).affectedKeys()
+      allow read: if request.auth != null &&
+                  request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null &&
+                    request.auth.uid == resource.data.userId &&
+                    request.resource.data.diff(resource.data).affectedKeys()
                        .hasOnly(['hasLocalFile']);
-      allow delete: if request.auth != null
-                    && request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null &&
+                    request.auth.uid == resource.data.userId;
+    }
+
+    // ── 成就定義（管理員維護，玩家唯讀）
+    match /achievements/{achievementId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // ── 玩家已解鎖成就（只能讀寫自己的，不能刪除）
+    match /user_achievements/{docId} {
+      allow read: if request.auth != null &&
+                  request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId;
+      allow update, delete: if false;
+    }
+
+    // ── App 全域設定（管理員維護，玩家唯讀）
+    match /app_config/{configId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
 
     // ── 社群功能 ──────────────────────────────────────────────────
-    
-    // 好友與邀請：只有參與者可讀寫
     match /friendships/{docId} {
       allow read: if request.auth != null && request.auth.uid in resource.data.users;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.requesterId;
@@ -86,23 +106,19 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid in resource.data.users;
     }
 
-    // 任務互動（按讚、評論）：大家可讀，本人可寫
     match /mission_interactions/{docId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
       allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
 
-    // 收藏景點：本人可讀寫
     match /user_bookmarks/{docId} {
       allow read, write: if request.auth != null && request.auth.uid == request.resource.data.userId;
     }
 
-    // 聊天頻道：參與者可讀寫
     match /chats/{chatId} {
       allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
       
-      // 子集合 messages
       match /messages/{messageId} {
         // 只有該聊天頻道的參與者可讀寫訊息
         allow read: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
