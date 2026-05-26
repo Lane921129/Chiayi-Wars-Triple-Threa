@@ -66,15 +66,19 @@ flutter run
 Firestore
 ├── users_public/{userId}           ← 公開的玩家資料（任何已登入用戶可讀）
 ├── users_private/{userId}          ← 私人資料（只有本人可讀寫）
-├── locations/{locationId}          ← 打卡點資料（管理員維護/系統匯入，陣營爭奪標的）
 ├── missions/{missionId}            ← 任務資料（管理員發布，玩家解任務獲取額外積分）
 ├── stores/{storeId}                ← 合作商家資料（管理員維護）
+├── shop_items/{itemId}             ← 商店道具資料（管理員維護）
 ├── point_logs/{logId}              ← 積分流水帳（只能新增，不能修改）
 ├── vouchers/{voucherId}            ← 優惠券（玩家擁有，店家核銷）
-├── route_sessions/{sessionId}      ← 跑圖摘要（本機存 GPS 點，雲端存摘要）
-├── achievements/{achievementId}    ← 成就定義（管理員維護）【新增】
-├── user_achievements/{docId}       ← 玩家已解鎖成就（玩家讀寫）【新增】
-└── app_config/{configId}           ← App 全域設定（管理員維護）【新增】
+├── route_sessions/{sessionId}      ← 跑圖摘要（登入後皆可讀以供好友查看，本機存 GPS 軌跡）
+├── achievements/{achievementId}    ← 成就定義（管理員維護）
+├── user_achievements/{docId}       ← 玩家已解鎖成就（只可讀寫自己的，不可刪除）
+├── app_config/{configId}           ← App 全域設定（管理員維護）
+├── friendships/{docId}             ← 社群好友關係（包含兩個人 UID，狀態 pending / accepted）
+├── mission_interactions/{docId}    ← 任務互動記錄（簽到與收藏歷史）
+├── user_bookmarks/{docId}          ← 使用者收藏書籤（收藏的景點）
+└── chats/{chatId}                  ← 聊天頻道與訊息（支援即時通訊，子資料集 messages）
 ```
 
 > ✅ GPS 原始座標全部存在手機本機（JSON 檔），Firestore 只存摘要，不消耗免費額度。
@@ -295,75 +299,134 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 判斷是否為管理員
+    // ── 判斷是否為管理員（讀取 users_private 中的 isAdmin 欄位）
     function isAdmin() {
       return request.auth != null &&
         get(/databases/$(database)/documents/users_private/$(request.auth.uid)).data.isAdmin == true;
     }
 
+    // ── 公開玩家資料（排行榜、地圖渲染）
     match /users_public/{userId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      // 允許本人修改自己的資料，也允許管理員修改（為了寫入虛擬排行榜資料）
+      allow write: if (request.auth != null && request.auth.uid == userId) || isAdmin();
     }
 
+    // ── 私人玩家資料（email、isAdmin、API Key 備援）
     match /users_private/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // ── 打卡地點（管理員可寫，玩家唯讀）
+    match /locations/{locationId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // ── 任務地點（管理員可寫，玩家唯讀）
     match /missions/{missionId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
+    // ── 合作商家（管理員可寫，玩家唯讀）
     match /stores/{storeId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
+    // ── 商店道具（管理員可寫，玩家唯讀）
+    match /shop_items/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // ── 積分流水帳（防作弊：只能新增、不能修改刪除）
     match /point_logs/{logId} {
-      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null
-                    && request.auth.uid == request.resource.data.userId
-                    && request.resource.data.points <= 100
-                    && request.resource.data.timestamp == request.time
-                    && request.resource.data.faction in ['red', 'green', 'blue'];
+      allow read: if request.auth != null &&
+                  request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId &&
+                    request.resource.data.points <= 100 &&
+                    request.resource.data.timestamp == request.time &&
+                    request.resource.data.faction in ['red', 'green', 'blue'];
       allow update, delete: if false;
     }
 
+    // ── 優惠券（只能讀自己的；核銷只能更新兩個欄位）
     match /vouchers/{voucherId} {
-      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth != null
-                    && request.auth.uid == resource.data.userId
-                    && request.resource.data.diff(resource.data).affectedKeys()
+      allow read: if request.auth != null &&
+                  request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null &&
+                    request.auth.uid == resource.data.userId &&
+                    request.resource.data.diff(resource.data).affectedKeys()
                        .hasOnly(['isRedeemed', 'redeemedAt']);
       allow delete: if false;
     }
 
+    // ── 跑圖摘要（只能寫自己的，登入後皆可讀以供好友查看）
     match /route_sessions/{sessionId} {
-      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth != null
-                    && request.auth.uid == resource.data.userId
-                    && request.resource.data.diff(resource.data).affectedKeys()
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null &&
+                    request.auth.uid == resource.data.userId &&
+                    request.resource.data.diff(resource.data).affectedKeys()
                        .hasOnly(['hasLocalFile']);
-      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null &&
+                    request.auth.uid == resource.data.userId;
     }
 
+    // ── 成就定義（管理員維護，玩家唯讀）
     match /achievements/{achievementId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
+    // ── 玩家已解鎖成就（只能讀寫自己的，不能刪除）
     match /user_achievements/{docId} {
-      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow read: if request.auth != null &&
+                  request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId;
       allow update, delete: if false;
     }
 
+    // ── App 全域設定（管理員維護，玩家唯讀）
     match /app_config/{configId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
+    }
+
+    // ── 社群功能 ──────────────────────────────────────────────
+    match /friendships/{docId} {
+      allow read: if request.auth != null && request.auth.uid in resource.data.users;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.requesterId;
+      allow update: if request.auth != null && request.auth.uid in resource.data.users;
+      allow delete: if request.auth != null && request.auth.uid in resource.data.users;
+    }
+
+    match /mission_interactions/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    match /user_bookmarks/{docId} {
+      allow read, write: if request.auth != null && request.auth.uid == request.resource.data.userId;
+    }
+
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
+      
+      match /messages/{messageId} {
+        allow read: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow create: if request.auth != null 
+                      && request.auth.uid == request.resource.data.senderId
+                      && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      }
     }
   }
 }
@@ -410,33 +473,68 @@ service cloud.firestore {
 ```
 untitled3/
 ├── lib/
-│   ├── main.dart              # App 入口、Firebase 初始化、Auth Wrapper
+│   ├── main.dart              # App 入口、Firebase 初始化、各 Service 注入與路由
 │   ├── firebase_options.dart  # FlutterFire 設定（自動產生）
-│   ├── screens/               # UI 頁面
-│   │   ├── login_screen.dart
-│   │   ├── home_screen.dart
-│   │   ├── map_screen.dart
-│   │   ├── missions_screen.dart
-│   │   ├── vouchers_screen.dart
-│   │   ├── profile_screen.dart
-│   │   └── ...
-│   ├── services/              # Firebase 服務層
-│   │   └── auth_service.dart
-│   └── theme/                 # App 主題設計
-│       └── app_theme.dart
-├── data/                      # 批次上傳用的資料
-│   ├── missions_chiayi.json   # 嘉義任務景點資料
-│   └── stores_chiayi.json     # 嘉義合作商家資料
-├── scripts/                   # Firebase 管理腳本 (Node.js)
-│   ├── upload_missions.js     # 批次上傳任務
-│   ├── upload_stores.js       # 批次上傳商家
-│   ├── backup_firestore.js    # 備份所有資料
-│   ├── restore_firestore.js   # 從備份還原
-│   └── package.json
-├── firestore.rules            # Firestore 安全規則
-├── firestore_design.md        # 資料庫設計文件
-└── firebase.json              # Firebase 部署設定
+│   ├── screens/               # 遊戲 UI 頁面
+│   │   ├── login_screen.dart        # 玩家登入與帳號註冊（支援 Google 登入、匿名登入）
+│   │   ├── home_screen.dart         # 主導航頁（Map、Missions、Shop、Leaderboard、Profile）
+│   │   ├── map_screen.dart          # 核心遊戲地圖（顯示玩家位置、陣營佔領景點、即時快取）
+│   │   ├── missions_screen.dart     # 任務景點總覽（顯示加成與狀態，支援打卡）
+│   │   ├── shop_screen.dart         # 陣營商店頁面（使用積分換取道具或加成）
+│   │   ├── leaderboard_screen.dart  # 排行榜頁面（顯示紅、綠、藍三系積分排行）
+│   │   ├── vouchers_screen.dart     # 已兌換的優惠券清單（支援實體店家核銷）
+│   │   ├── profile_screen.dart      # 我的主頁（簡潔模式切換、下載快取地圖、好友系統、開發專區）
+│   │   ├── friends_screen.dart      # 好友管理面版（我的好友、待處理申請、Email搜尋新增）
+│   │   ├── route_history_screen.dart# 跑圖記錄頁面（分頁顯示「我的紀錄」與「好友紀錄」）
+│   │   ├── performance_screen.dart  # 跑圖績效分析（軌跡視覺化、統計數據）
+│   │   ├── faction_select_screen.dart# 陣營選擇頁面（引導玩家選擇紅、綠、藍軍陣營）
+│   │   ├── admin_panel_screen.dart  # 管理員控制面版（手動新增打卡點、任務與合作商家）
+│   │   ├── add_location_screen.dart # [管理員] 手動新增打卡點
+│   │   ├── add_mission_screen.dart  # [管理員] 手動新增任務
+│   │   ├── add_store_screen.dart    # [管理員] 手動新增合作商家
+│   │   ├── api_key_screen.dart      # Gemini AI 金鑰設定頁（獨立加密儲存）
+│   │   ├── ai_chat_bottom_sheet.dart# AI 景點導覽對話框（透過 Gemini 提供沉浸式導覽）
+│   │   └── missions_bottom_sheet.dart# 地圖上景點任務簡短資訊與簽到入口
+│   ├── services/              # 商業邏輯與雲端服務層
+│   │   ├── auth_service.dart        # 使用者身分驗證與 Firestore 私密資料同步
+│   │   ├── friend_service.dart      # 社群好友關係維護、雙向確認流、好友名單 Stream
+│   │   ├── ai_service.dart          # 整合 Google Gemini AI 提供智慧導覽與語音合成
+│   │   ├── api_key_service.dart     # 管理加密後的 Gemini API 金鑰 (Secure Storage)
+│   │   ├── bus_service.dart         # 串接嘉義市即時公車動態 API 與站點定位
+│   │   ├── map_cache_service.dart   # OpenStreetMap 離線地圖瓦片下載與快取管理
+│   │   ├── seed_service.dart        # [開發人員] 批次上傳測試資料與初始任務種子
+│   │   └── weather_service.dart     # 串接嘉義氣象局即時天氣與陣營出戰建議
+│   ├── widgets/               # 可複用自訂組件
+│   │   ├── multi_fab.dart           # 主地圖多功能浮動操作按鈕
+│   │   └── map_multi_fab.dart       # 地圖專屬複合按鈕組件
+│   └── theme/                 # 視覺主題與樣式設計
+│       ├── app_theme.dart           # 遊戲風暗色/亮色主題與陣營特別配色 (FactionColors)
+│       ├── simplified_theme.dart    # 為年長者/純工具用途設計的超清晰簡潔主題
+│       └── theme_provider.dart      # 全域主題與簡潔/遊戲模式狀態管理器
+├── data/                      # 批次匯入用的嘉義在地資料庫種子
+│   ├── missions_chiayi.json   # 嘉義十大人文景點/任務預載資料
+│   └── stores_chiayi.json     # 嘉義合作特約特惠商家資料
+├── scripts/                   # Firebase 管理與維護運作腳本 (Node.js)
+│   ├── backup_firestore.js    # 全庫自動化備份腳本，將資料匯出至本地 data/ JSON
+│   ├── restore_firestore.js   # 災後全重建與移機還原腳本
+│   ├── upload_missions.js     # 批次重新發布嘉義市任務景點資料
+│   ├── upload_stores.js       # 批次重新發布合作商家優惠資料
+│   ├── set_admin.js           # 指派特定用戶為超級管理員權限
+│   └── package.json           # 運作腳本依賴套件設定
+├── firestore.rules            # 經優化且修復重複項的 Firebase 安全性規則
+├── firestore.indexes.json      # Firestore 複合索引設定檔
+└── firebase.json              # Firebase 部署控制設定檔
 ```
+
+---
+
+## 👥 社群好友系統 (Friends System)
+
+「探索諸羅：三國爭霸」配備了完整的玩家社群與好友分享功能，增加遊戲趣味性與陣營凝聚力：
+- **Email 雙向好友邀請**：玩家可以透過搜尋好友註冊的電子郵件發送好友申請。系統透過 Firebase Firestore 即時雙向同步好友狀態。若雙方皆發出邀請，系統將自動確認為好友。
+- **好友申請管理面版**：提供直覺簡便的待處理申請清單，支援一鍵「同意」或「拒絕」好友請求。
+- **好友跑圖紀錄共享**：在跑圖記錄中新增「好友的跑圖紀錄」分頁，可隨時查看所有好友上傳的跑圖摘要（包含日期、里程、耗時及獲得積分）。
+- **唯讀保護機制**：本人的詳細 GPS 軌跡與敏感檔案儲存在手機本機（不上傳雲端），好友只能查看 Firestore 上的統計與任務摘要，且無法修改或刪除他人的跑圖紀錄，符合 Security Rules 規範。
 
 ---
 

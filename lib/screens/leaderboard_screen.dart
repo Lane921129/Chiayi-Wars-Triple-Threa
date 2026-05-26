@@ -138,11 +138,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     final textSubColor = isDarkMode ? FactionColors.textSecondary : Colors.black54;
     final cardBgColor = isDarkMode ? FactionColors.cardBg : Colors.white;
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: Column(
-          children: [
+    return Column(
+      children: [
             // ── 頂部標題 ──
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -224,9 +221,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                 itemBuilder: (_, i) => _buildPlayerRow(sorted[i], i + 1, isDarkMode),
               ),
             ),
-          ],
-        ),
-      ),
+      ],
     );
   }
 

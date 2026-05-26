@@ -55,3 +55,7 @@ scripts/serviceAccountKey.json
 
 # Firestore backup data (can be large, regenerate via backup_firestore.js)
 data/backup_*/
+
+# Node modules
+node_modules/
+**/node_modules/

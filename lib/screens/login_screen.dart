@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -77,14 +79,21 @@ class _LoginScreenState extends State<LoginScreen>
             .signInWithEmailAndPassword(email: email, password: password);
         if (mounted) _showSnack('⚔️ 歡迎回到諸羅城！');
       } else {
-        await FirebaseAuth.instance
+        // 1. 建立 Firebase 帳號，並將結果存入 cred 變數
+        UserCredential cred = await FirebaseAuth.instance
             .createUserWithEmailAndPassword(email: email, password: password);
+
+        // 2. 在 Firestore 資料庫中建立使用者的初始資料
+        await FirebaseFirestore.instance.collection('users_public').doc(cred.user!.uid).set({
+          'email': email,
+          'score': 0,
+          'faction': '', // 留空，AuthWrapper 才會判斷是新手並帶去選陣營
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
         if (mounted) {
           _showSnack('🎉 新血加入陣營！');
-          setState(() {
-            _isLoginMode = true;
-            _passwordController.clear();
-          });
+          // 註冊成功後，main.dart 的 AuthWrapper 會自動接手並跳轉畫面
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -116,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen>
           builder: (ctx) => AlertDialog(
             backgroundColor: FactionColors.cardBg,
             shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Row(children: [
               Icon(Icons.warning_amber_rounded,
                   color: FactionColors.redGlow, size: 28),
@@ -367,7 +376,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   color: FactionColors.textSecondary,
                                 ),
                                 onPressed: () => setState(
-                                    () => _obscurePassword = !_obscurePassword),
+                                        () => _obscurePassword = !_obscurePassword),
                               ),
                             ),
                           ),
@@ -387,17 +396,17 @@ class _LoginScreenState extends State<LoginScreen>
                               ),
                               child: _isLoading
                                   ? const SizedBox(
-                                      height: 22,
-                                      width: 22,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2.5,
-                                          color: FactionColors.darkBg))
+                                  height: 22,
+                                  width: 22,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: FactionColors.darkBg))
                                   : Text(
-                                      _isLoginMode ? '登入' : '確認註冊',
-                                      style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold),
-                                    ),
+                                _isLoginMode ? '登入' : '確認註冊',
+                                style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold),
+                              ),
                             ),
                           ),
 
@@ -407,9 +416,9 @@ class _LoginScreenState extends State<LoginScreen>
                               onPressed: _isLoading
                                   ? null
                                   : () => setState(() {
-                                        _isLoginMode = !_isLoginMode;
-                                        _passwordController.clear();
-                                      }),
+                                _isLoginMode = !_isLoginMode;
+                                _passwordController.clear();
+                              }),
                               child: Text(
                                 _isLoginMode
                                     ? '還沒加入陣營？點此入伍'

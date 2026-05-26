@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -8,14 +9,16 @@ import '../services/auth_service.dart';
 import 'map_screen.dart';
 import 'missions_screen.dart';
 import 'missions_bottom_sheet.dart';
-import 'leaderboard_screen.dart';
+import 'mission_center_screen.dart';
 import 'profile_screen.dart';
 import '../widgets/multi_fab.dart';
 import 'shop_screen.dart';
 import 'performance_screen.dart';
 import 'backpack_screen.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/services.dart';
 import 'api_key_screen.dart';
+import 'friends_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -34,17 +37,28 @@ class _HomeScreenState extends State<HomeScreen> {
     'faction': 'red',
     'totalScore': 0,
   };
+  
+  Stream<DocumentSnapshot>? _userStream;
 
   late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
+    final user = _authService.currentUser;
+    if (user != null) {
+      _userStream = FirebaseFirestore.instance.collection('users_public').doc(user.uid).snapshots();
+      // 確保舊用戶的信箱也能被搜尋到 (自動修補資料)
+      FirebaseFirestore.instance.collection('users_public').doc(user.uid).set(
+        {'searchableEmail': user.email ?? ''},
+        SetOptions(merge: true)
+      );
+    }
     _screens = [
       MapScreen(key: _mapKey),
-      const MissionsScreen(),
+      const FriendsScreen(),
       const ShopScreen(),
-      const LeaderboardScreen(),
+      const MissionCenterScreen(),
       const ProfileScreen(),
     ];
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -76,12 +90,20 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Text('稍後再說', style: TextStyle(color: Colors.grey)),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(context);
-                mapCache.startDownload();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已開始在背景下載離線地圖！')),
-                );
+                try {
+                  await mapCache.startDownload();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('已開始在背景下載離線地圖！')),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('下載失敗：$e')));
+                  }
+                }
               },
               style: ElevatedButton.styleFrom(backgroundColor: FactionColors.gold),
               child: const Text('開始下載', style: TextStyle(color: Colors.black87)),
@@ -97,7 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final user = _authService.currentUser;
-    if (user == null) {
+    if (user == null || _userStream == null) {
       return const Scaffold(body: Center(child: Text('未登入')));
     }
 
@@ -106,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('users_public').doc(user.uid).snapshots(),
+      stream: _userStream,
       builder: (context, snapshot) {
         if (snapshot.hasData && snapshot.data!.exists) {
           _userData = snapshot.data!.data() as Map<String, dynamic>;
@@ -169,9 +191,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       label: '地圖',
                     ),
                     BottomNavigationBarItem(
-                      icon: Icon(Icons.flag_outlined),
-                      activeIcon: Icon(Icons.flag),
-                      label: '任務',
+                      icon: Icon(Icons.people_outline),
+                      activeIcon: Icon(Icons.people),
+                      label: '社群好友',
                     ),
                     BottomNavigationBarItem(
                       icon: Icon(Icons.storefront_outlined),
@@ -179,9 +201,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       label: '商店',
                     ),
                     BottomNavigationBarItem(
-                      icon: Icon(Icons.leaderboard_outlined),
-                      activeIcon: Icon(Icons.leaderboard),
-                      label: '排行榜',
+                      icon: Icon(Icons.flag_outlined),
+                      activeIcon: Icon(Icons.flag),
+                      label: '任務中心',
                     ),
                     BottomNavigationBarItem(
                       icon: Icon(Icons.person_outline),
@@ -204,21 +226,29 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          UserAccountsDrawerHeader(
-            decoration: BoxDecoration(
-              color: isDarkMode ? Colors.black87 : factionColor.withValues(alpha: 0.8),
-            ),
-            accountName: Text(
-              _userData['username'] ?? 'User',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
-            ),
-            accountEmail: Text(
-              '${FactionColors.emojiForFaction(_userData['faction'] ?? 'red')} ${FactionColors.nameForFaction(_userData['faction'] ?? 'red')}',
-              style: const TextStyle(color: FactionColors.gold, fontWeight: FontWeight.bold),
-            ),
-            currentAccountPicture: const CircleAvatar(
-              backgroundColor: Colors.white,
-              child: Icon(Icons.person, size: 40, color: Colors.grey),
+          GestureDetector(
+            onTap: () => _showEditProfileDialog(context, _authService.currentUser, isDarkMode),
+            child: UserAccountsDrawerHeader(
+              decoration: BoxDecoration(
+                color: isDarkMode ? Colors.black87 : factionColor.withValues(alpha: 0.8),
+              ),
+              accountName: Text(
+                '${_userData['displayName'] ?? _userData['username'] ?? 'User'} (點擊編輯)',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+              ),
+              accountEmail: Text(
+                '${FactionColors.emojiForFaction(_userData['faction'] ?? 'red')} ${FactionColors.nameForFaction(_userData['faction'] ?? 'red')}',
+                style: const TextStyle(color: FactionColors.gold, fontWeight: FontWeight.bold),
+              ),
+              currentAccountPicture: CircleAvatar(
+                backgroundColor: Colors.white,
+                backgroundImage: _userData['avatarUrl'] != null && _userData['avatarUrl'].toString().isNotEmpty
+                    ? NetworkImage(_userData['avatarUrl'])
+                    : null,
+                child: _userData['avatarUrl'] == null || _userData['avatarUrl'].toString().isEmpty
+                    ? const Icon(Icons.person, size: 40, color: Colors.grey)
+                    : null,
+              ),
             ),
           ),
           ListTile(
@@ -237,6 +267,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 // TODO: 實作語系切換
               },
             ),
+          ),
+          ListTile(
+            leading: Icon(Icons.people, color: isDarkMode ? Colors.white70 : Colors.black87),
+            title: Text('社群好友', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
+            onTap: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const FriendsScreen()));
+            },
           ),
           const Divider(),
           Padding(
@@ -364,6 +401,98 @@ class _HomeScreenState extends State<HomeScreen> {
       onToggle: (isOpen) {
         _mapKey.currentState?.setMenuOpen(isOpen);
       },
+    );
+  }
+
+  void _showEditProfileDialog(BuildContext context, User? user, bool isDarkMode) {
+    if (user == null) return;
+    
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final nameController = TextEditingController();
+        final avatarController = TextEditingController();
+
+        return FutureBuilder<DocumentSnapshot>(
+          future: FirebaseFirestore.instance.collection('users_public').doc(user.uid).get(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const AlertDialog(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                content: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final data = snapshot.data?.data() as Map<String, dynamic>?;
+            if (nameController.text.isEmpty && avatarController.text.isEmpty) {
+              nameController.text = data?['displayName'] ?? '';
+              avatarController.text = data?['avatarUrl'] ?? '';
+            }
+
+            return AlertDialog(
+              backgroundColor: isDarkMode ? FactionColors.cardBg : Colors.white,
+              title: Text('編輯個人檔案', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
+                      decoration: InputDecoration(
+                        labelText: '顯示名稱',
+                        labelStyle: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: avatarController,
+                      style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
+                      decoration: InputDecoration(
+                        labelText: '照片 URL',
+                        labelStyle: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('UID', style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black87)),
+                      subtitle: Text(user.uid, style: TextStyle(fontSize: 12, color: isDarkMode ? Colors.white54 : Colors.grey)),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.copy, color: Colors.blueAccent),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: user.uid));
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已複製 UID')));
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    await FirebaseFirestore.instance.collection('users_public').doc(user.uid).update({
+                      'displayName': nameController.text.trim(),
+                      'avatarUrl': avatarController.text.trim(),
+                    });
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已儲存變更')));
+                      Navigator.pop(ctx);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: FactionColors.gold),
+                  child: const Text('儲存', style: TextStyle(color: Colors.black87)),
+                ),
+              ],
+            );
+          }
+        );
+      }
     );
   }
 }

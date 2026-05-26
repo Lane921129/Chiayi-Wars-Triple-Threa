@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import 'ai_chat_bottom_sheet.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 /// 任務列表頁面
 /// 對應 Firestore missions/{missionId} collection
@@ -323,21 +324,23 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: FactionColors.cardBorder,
+                              color: isDarkMode ? FactionColors.cardBorder : Colors.white,
                               borderRadius: BorderRadius.circular(6),
+                              border: isDarkMode ? null : Border.all(color: Colors.black12),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.near_me,
-                                    color: FactionColors.textSecondary,
+                                Icon(Icons.near_me,
+                                    color: isDarkMode ? FactionColors.textSecondary : Colors.black87,
                                     size: 12),
                                 const SizedBox(width: 3),
                                 Text(
                                   m['distance'] ?? '未知距離',
                                   style: TextStyle(
-                                    color: textSecondary,
+                                    color: isDarkMode ? FactionColors.textSecondary : Colors.black87,
                                     fontSize: 11,
+                                    fontWeight: isDarkMode ? FontWeight.normal : FontWeight.bold,
                                   ),
                                 ),
                               ],
@@ -446,13 +449,50 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                   style: const TextStyle(fontSize: 60)),
             ),
             const SizedBox(height: 16),
-            Text(
-              m['name'] ?? '未知任務',
-              style: TextStyle(
-                color: textPrimary,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    m['name'] ?? '未知任務',
+                    style: TextStyle(
+                      color: textPrimary,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.qr_code),
+                  color: categoryColor,
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text('任務 QR Code: ${m['name']}'),
+                        content: SizedBox(
+                          width: 200,
+                          height: 200,
+                          child: Center(
+                            child: QrImageView(
+                              data: 'mission:${m['id']}',
+                              version: QrVersions.auto,
+                              size: 200.0,
+                            ),
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('關閉'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Text(
@@ -483,6 +523,8 @@ class _MissionsScreenBodyState extends State<MissionsScreenBody>
                   icon: Icons.near_me,
                   label: m['distance'] ?? '未知距離',
                   color: textSecondary,
+                  bgColor: isDarkMode ? null : Colors.white,
+                  textColor: isDarkMode ? null : Colors.black87,
                 ),
               ],
             ),
@@ -565,28 +607,30 @@ class _DetailChip extends StatelessWidget {
   final IconData? icon;
   final String label;
   final Color color;
+  final Color? bgColor;
+  final Color? textColor;
 
-  const _DetailChip({this.icon, required this.label, required this.color});
+  const _DetailChip({this.icon, required this.label, required this.color, this.bgColor, this.textColor});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: bgColor ?? color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(color: bgColor != null ? Colors.black12 : color.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, color: color, size: 14),
+            Icon(icon, color: textColor ?? color, size: 14),
             const SizedBox(width: 4),
           ],
           Text(label,
               style: TextStyle(
-                  color: color,
+                  color: textColor ?? color,
                   fontSize: 12,
                   fontWeight: FontWeight.bold)),
         ],

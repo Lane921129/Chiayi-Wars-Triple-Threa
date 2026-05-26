@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/ai_service.dart';
+import '../services/api_key_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
+import 'api_key_screen.dart';
 
 class AiChatBottomSheet extends StatefulWidget {
   final String? initialPrompt;
@@ -117,6 +119,34 @@ class _AiChatBottomSheetState extends State<AiChatBottomSheet> {
               child: CircularProgressIndicator(),
             ),
 
+          // Missing Key Banner
+          if (Provider.of<ApiKeyService>(context).geminiKey.isEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              color: Colors.redAccent.withValues(alpha: 0.2),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning, color: Colors.redAccent, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      '尚未設定 Gemini API Key，AI 嚮導無法回覆。',
+                      style: TextStyle(color: Colors.redAccent, fontSize: 13),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ApiKeyScreen()),
+                      );
+                    },
+                    child: const Text('前往設定', style: TextStyle(color: Colors.redAccent)),
+                  )
+                ],
+              ),
+            ),
+
           // Input Area
           Container(
             padding: EdgeInsets.only(
@@ -138,11 +168,12 @@ class _AiChatBottomSheetState extends State<AiChatBottomSheet> {
                       border: InputBorder.none,
                     ),
                     onSubmitted: (_) => _sendMessage(),
+                    enabled: Provider.of<ApiKeyService>(context).geminiKey.isNotEmpty,
                   ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.send, color: FactionColors.gold),
-                  onPressed: _sendMessage,
+                  onPressed: Provider.of<ApiKeyService>(context).geminiKey.isNotEmpty ? _sendMessage : null,
                 ),
               ],
             ),

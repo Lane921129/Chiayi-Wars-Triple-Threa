@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import '../theme/theme_provider.dart';
 import '../theme/app_theme.dart';
 import 'home_screen.dart';
 
@@ -74,20 +76,24 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
+    final bgColor = isDarkMode ? FactionColors.darkBg : Colors.grey[100]!;
+
     return Scaffold(
-      backgroundColor: FactionColors.darkBg,
+      backgroundColor: bgColor,
       body: Stack(
         children: [
           // 背景漸層
-          Container(
-            decoration: const BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment.topCenter,
-                radius: 1.5,
-                colors: [Color(0xFF1A1A3E), FactionColors.darkBg],
+          if (isDarkMode)
+            Container(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.topCenter,
+                  radius: 1.5,
+                  colors: [Color(0xFF1A1A3E), FactionColors.darkBg],
+                ),
               ),
             ),
-          ),
 
           SafeArea(
             child: Column(
@@ -140,7 +146,7 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                   child: ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     itemCount: _factions.length,
-                    itemBuilder: (_, i) => _buildFactionCard(_factions[i]),
+                    itemBuilder: (_, i) => _buildFactionCard(_factions[i], isDarkMode),
                   ),
                 ),
 
@@ -179,10 +185,10 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                                   await FirebaseFirestore.instance
                                       .collection('users_public')
                                       .doc(user.uid)
-                                      .update({
+                                      .set({
                                     'faction': _selectedFaction,
                                     'factionJoinedAt': FieldValue.serverTimestamp(),
-                                  });
+                                  }, SetOptions(merge: true));
                                 }
 
                                 if (context.mounted) {
@@ -229,11 +235,15 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
     );
   }
 
-  Widget _buildFactionCard(Map<String, dynamic> faction) {
+  Widget _buildFactionCard(Map<String, dynamic> faction, bool isDarkMode) {
     final isSelected = _selectedFaction == faction['id'];
     final color = faction['color'] as Color;
     final glow = faction['glow'] as Color;
     final gradient = faction['gradient'] as List<Color>;
+
+    final cardBg = isDarkMode ? FactionColors.cardBg : Colors.white;
+    final textPrimary = isDarkMode ? FactionColors.textPrimary : Colors.black87;
+    final textSecondary = isDarkMode ? FactionColors.textSecondary : Colors.black54;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -241,7 +251,7 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isSelected ? color : FactionColors.cardBorder,
+          color: isSelected ? color : (isDarkMode ? FactionColors.cardBorder : Colors.black12),
           width: isSelected ? 2.5 : 1,
         ),
         boxShadow: isSelected
@@ -252,12 +262,14 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                   spreadRadius: 2,
                 ),
               ]
-            : [],
+            : (isDarkMode ? [] : [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))
+              ]),
       ),
       child: Material(
         color: isSelected
-            ? Color.lerp(FactionColors.cardBg, color.withValues(alpha: 0.2), 0.5)
-            : FactionColors.cardBg,
+            ? Color.lerp(cardBg, color.withValues(alpha: 0.2), 0.5)
+            : cardBg,
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
@@ -308,7 +320,7 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                                 style: TextStyle(
                                   color: isSelected
                                       ? color
-                                      : FactionColors.textPrimary,
+                                      : textPrimary,
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -336,8 +348,8 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                             faction['subtitle'] as String,
                             style: TextStyle(
                               color: isSelected
-                                  ? color.withValues(alpha: 0.7)
-                                  : FactionColors.textSecondary,
+                                  ? color.withValues(alpha: 0.8)
+                                  : textSecondary,
                               fontSize: 13,
                             ),
                           ),
@@ -353,7 +365,7 @@ class _FactionSelectScreenState extends State<FactionSelectScreen>
                         shape: BoxShape.circle,
                         color: isSelected ? color : Colors.transparent,
                         border: Border.all(
-                          color: isSelected ? color : FactionColors.cardBorder,
+                          color: isSelected ? color : (isDarkMode ? FactionColors.cardBorder : Colors.black26),
                           width: 2,
                         ),
                       ),

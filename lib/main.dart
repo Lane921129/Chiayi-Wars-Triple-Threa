@@ -16,6 +16,7 @@ import 'services/map_cache_service.dart';
 import 'services/api_key_service.dart';
 import 'services/weather_service.dart';
 import 'services/bus_service.dart';
+import 'services/ubike_service.dart';
 import 'services/ai_service.dart';
 
 void main() async {
@@ -41,6 +42,10 @@ void main() async {
         ChangeNotifierProxyProvider<ApiKeyService, AiService>(
           create: (context) => AiService(Provider.of<ApiKeyService>(context, listen: false)),
           update: (context, apiKeyService, previous) => previous ?? AiService(apiKeyService),
+        ),
+        ChangeNotifierProxyProvider<ApiKeyService, UbikeService>(
+          create: (context) => UbikeService(Provider.of<ApiKeyService>(context, listen: false)),
+          update: (context, apiKeyService, previous) => previous ?? UbikeService(apiKeyService),
         ),
       ],
       child: const MyApp(),

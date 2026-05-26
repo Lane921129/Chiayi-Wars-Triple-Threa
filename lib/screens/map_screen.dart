@@ -8,16 +8,20 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import '../services/weather_service.dart';
 import '../services/bus_service.dart';
+import '../services/ubike_service.dart';
+import 'scanner_screen.dart';
 import 'faction_select_screen.dart';
 import 'ai_chat_bottom_sheet.dart';
 import '../widgets/map_multi_fab.dart';
 import 'backpack_screen.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
-
+import '../services/auth_service.dart';
+import 'add_location_screen.dart';
+import 'add_store_screen.dart';
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
@@ -29,6 +33,7 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   // 公開屬性與方法給 HomeScreen 控制 (簡潔模式)
   bool get isRouteRecording => _isRouteRecording;
   bool get showBus => _showBus;
+  bool get showUbike => _showUbike;
 
   bool _isMenuOpenFromHome = false;
   void setMenuOpen(bool isOpen) {
@@ -54,21 +59,44 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Future<void> toggleBus() async {
     setState(() {
       _showBus = !_showBus;
+      if (!_showBus) {
+        _selectedBusRoute = null;
+      }
     });
     if (_showBus) {
-      final busService = Provider.of<BusService>(context, listen: false);
-      await busService.fetchBusData();
+      final busProvider = Provider.of<BusService>(context, listen: false);
+      await busProvider.fetchBusData();
       if (!mounted) return;
-      if (busService.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(busService.error!)));
+      if (busProvider.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(busProvider.error!)));
+      }
+    }
+  }
+
+  Future<void> toggleUbike() async {
+    setState(() {
+      _showUbike = !_showUbike;
+    });
+    if (_showUbike) {
+      final ubikeService = Provider.of<UbikeService>(context, listen: false);
+      await ubikeService.fetchUbikeData();
+      if (!mounted) return;
+      if (ubikeService.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ubikeService.error!)));
       }
     }
   }
   final MapController _mapController = MapController();
   bool _isRouteRecording = false;
-  final String _faction = 'red';
+  String _faction = 'red';
+  StreamSubscription<DocumentSnapshot>? _factionSub;
+  late Stream<QuerySnapshot> _locationsStream;
+  late Stream<QuerySnapshot> _missionsStream;
+  late Stream<QuerySnapshot> _usersStream;
   String _missionFilter = 'all'; // 'all', 'food', 'heritage', 'cafe'
   bool _showBus = false;
+  BusRouteData? _selectedBusRoute;
+  bool _showUbike = false;
   bool _showFactionLayer = true;
   double _sheetHeight = 170.0;
 
@@ -79,105 +107,309 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Timer? _timer;
   int _elapsedSeconds = 0;
 
+  // 定位圖標與附近的人支援
+  LatLng? _currentPosition;
+  Timer? _locationUploadTimer;
+  StreamSubscription<Position>? _generalPositionStream;
+
   // 嘉義市中心座標
   static const LatLng _chiayi = LatLng(23.4800, 120.4491);
 
   // Firebase Firestore instance
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  bool _isAdmin = false;
 
   @override
   void initState() {
     super.initState();
+    _checkAdminStatus();
+    _locationsStream = _firestore.collection('locations').where('status', isEqualTo: 'active').snapshots();
+    _missionsStream = _firestore.collection('missions').where('status', isEqualTo: 'active').snapshots();
+    _usersStream = _firestore.collection('users_public').where('lastLocation', isNull: false).snapshots();
+    
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _factionSub = _firestore.collection('users_public').doc(user.uid).snapshots().listen((doc) {
+        if (doc.exists && mounted) {
+          final newFaction = doc.data()?['faction'] as String? ?? 'red';
+          if (_faction != newFaction) {
+            setState(() {
+              _faction = newFaction;
+            });
+          }
+        }
+      });
+    }
+
     _recordingPulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
+    
+    _initGeneralLocation();
+  }
+
+  Future<void> _checkAdminStatus() async {
+    final isAdmin = await AuthService().isAdmin();
+    if (mounted) {
+      setState(() {
+        _isAdmin = isAdmin;
+      });
+    }
+  }
+
+  void _initGeneralLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+    
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      if (mounted) {
+        bool? shouldRequest = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('需要定位權限'),
+            content: const Text('為了在地圖上顯示您的位置與尋找附近的探索者，請允許我們存取您的定位。'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('前往授權', style: TextStyle(fontWeight: FontWeight.bold))),
+            ],
+          ),
+        );
+        if (shouldRequest == true) {
+          permission = await Geolocator.requestPermission();
+        }
+      } else {
+        permission = await Geolocator.requestPermission();
+      }
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('定位權限已被永久拒絕'),
+            content: const Text('請前往系統設定手動開啟定位權限，才能正常使用地圖功能。'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+              TextButton(onPressed: () {
+                Navigator.pop(ctx);
+                Geolocator.openAppSettings();
+              }, child: const Text('前往設定', style: TextStyle(fontWeight: FontWeight.bold))),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+
+    if (permission == LocationPermission.denied) {
+      return;
+    }
+    
+    // 第一次拿位置（加 timeout 避免等待過長）
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      if (mounted) {
+        setState(() {
+          _currentPosition = LatLng(pos.latitude, pos.longitude);
+        });
+        _uploadLocation(pos.latitude, pos.longitude);
+      }
+    } catch (e) {
+      // 無法取得位置（可能是模擬器），嘗試用最後已知位置
+      try {
+        final lastPos = await Geolocator.getLastKnownPosition();
+        if (lastPos != null && mounted) {
+          setState(() {
+            _currentPosition = LatLng(lastPos.latitude, lastPos.longitude);
+          });
+        }
+      } catch (_) {}
+    }
+    
+    // 定期上傳 (30s)
+    _locationUploadTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_currentPosition != null) {
+        _uploadLocation(_currentPosition!.latitude, _currentPosition!.longitude);
+      }
+    });
+
+    // 持續監聽 (一般模式, 距離 10m 更新)
+    _generalPositionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, distanceFilter: 10),
+    ).listen((Position pos) {
+      if (mounted) {
+        setState(() {
+          _currentPosition = LatLng(pos.latitude, pos.longitude);
+        });
+      }
+    });
+  }
+
+  void _uploadLocation(double lat, double lng) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _firestore.collection('users_public').doc(user.uid).update({
+        'lastLat': lat,
+        'lastLng': lng,
+        'lastSeenAt': FieldValue.serverTimestamp(),
+      }).catchError((_) {}); // 忽略無權限或尚未建立文件的情況
+    }
   }
 
   @override
   void dispose() {
-    _recordingPulse.dispose();
+    _factionSub?.cancel();
     _positionStream?.cancel();
+    _generalPositionStream?.cancel();
     _timer?.cancel();
+    _locationUploadTimer?.cancel();
+    _recordingPulse.dispose();
+    
+    // 離線時清除最後出沒時間
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _firestore.collection('users_public').doc(user.uid).update({
+        'lastSeenAt': null,
+      }).catchError((_) {});
+    }
     super.dispose();
   }
 
   Future<void> _toggleRouteRecording() async {
-    if (_isRouteRecording) {
-      // 停止錄製
-      setState(() {
-        _isRouteRecording = false;
-      });
-      _positionStream?.cancel();
-      _timer?.cancel();
+    try {
+      if (_isRouteRecording) {
+        // 停止錄製
+        setState(() {
+          _isRouteRecording = false;
+        });
+        _positionStream?.cancel();
+        _timer?.cancel();
 
-      // 結算與存檔
-      if (_routePoints.length >= 2) {
-        double totalDistance = 0;
-        final Distance distanceCalc = const Distance();
-        for (int i = 0; i < _routePoints.length - 1; i++) {
-          totalDistance += distanceCalc.as(LengthUnit.Meter, _routePoints[i], _routePoints[i+1]);
-        }
+        // 結算與存檔
+        if (_routePoints.length >= 2) {
+          double totalDistance = 0;
+          final Distance distanceCalc = const Distance();
+          for (int i = 0; i < _routePoints.length - 1; i++) {
+            totalDistance += distanceCalc.as(LengthUnit.Meter, _routePoints[i], _routePoints[i+1]);
+          }
 
-        final user = FirebaseAuth.instance.currentUser;
-        if (user != null) {
-          await _firestore.collection('users').doc(user.uid).collection('routes').add({
-            'timestamp': FieldValue.serverTimestamp(),
-            'durationSeconds': _elapsedSeconds,
-            'distanceMeters': totalDistance,
-            'points': _routePoints.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList(),
-          });
+          final user = FirebaseAuth.instance.currentUser;
+          if (user != null) {
+            final weather = Provider.of<WeatherService>(context, listen: false).currentWeather;
+            String weatherDesc = '未知天氣';
+            if (weather != null) {
+              weatherDesc = '${weather.description} ${weather.minTemp}°C - ${weather.maxTemp}°C';
+            }
+
+            await _firestore.collection('users').doc(user.uid).collection('routes').add({
+              'timestamp': FieldValue.serverTimestamp(),
+              'durationSeconds': _elapsedSeconds,
+              'distanceMeters': totalDistance,
+              'weather': weatherDesc,
+              'points': _routePoints.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList(),
+            });
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('跑圖已儲存！總距離：${totalDistance.toStringAsFixed(0)}m')),
+              );
+            }
+          }
+        } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('跑圖已儲存！總距離：${totalDistance.toStringAsFixed(0)}m')),
+              const SnackBar(content: Text('跑圖距離過短，未儲存')),
             );
           }
         }
+        
+        setState(() {
+          _routePoints.clear();
+          _elapsedSeconds = 0;
+        });
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('跑圖距離過短，未儲存')),
-          );
+        // 開始錄製
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('請先開啟裝置的定位服務')),
+            );
+          }
+          return;
         }
+
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+          if (permission == LocationPermission.denied) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('無法取得定位權限')),
+              );
+            }
+            return;
+          }
+        }
+        if (permission == LocationPermission.deniedForever) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('定位權限被永久拒絕，請至設定開啟')),
+            );
+          }
+          return;
+        }
+
+        setState(() {
+          _isRouteRecording = true;
+          _routePoints.clear();
+          if (_currentPosition != null) {
+            _routePoints.add(_currentPosition!);
+          }
+          _elapsedSeconds = 0;
+        });
+
+        _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          setState(() {
+            _elapsedSeconds++;
+          });
+        });
+
+        const locationSettings = LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 5,
+        );
+
+        _positionStream = Geolocator.getPositionStream(locationSettings: locationSettings).listen((Position pos) {
+          final point = LatLng(pos.latitude, pos.longitude);
+          if (mounted) {
+            setState(() {
+              _routePoints.add(point);
+            });
+          }
+          _mapController.move(point, 17);
+        });
       }
-      
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('無法啟動跑圖：$e')),
+        );
+      }
       setState(() {
+        _isRouteRecording = false;
         _routePoints.clear();
         _elapsedSeconds = 0;
       });
-    } else {
-      // 開始錄製
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
-      }
-      if (permission == LocationPermission.deniedForever) return;
-
-      setState(() {
-        _isRouteRecording = true;
-        _routePoints.clear();
-        _elapsedSeconds = 0;
-      });
-
-      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        setState(() {
-          _elapsedSeconds++;
-        });
-      });
-
-      const locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
-      );
-
-      _positionStream = Geolocator.getPositionStream(locationSettings: locationSettings).listen((Position pos) {
-        final point = LatLng(pos.latitude, pos.longitude);
-        setState(() {
-          _routePoints.add(point);
-        });
-        _mapController.move(point, 17);
-      });
+      _positionStream?.cancel();
+      _timer?.cancel();
     }
   }
 
@@ -209,14 +441,28 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           // ── OSM 地圖 ─────────────────────────────────────────
           FlutterMap(
             mapController: _mapController,
-            options: const MapOptions(
+            options: MapOptions(
               initialCenter: _chiayi,
               initialZoom: 15.0,
               minZoom: 10,
               maxZoom: 18,
-              interactionOptions: InteractionOptions(
+              interactionOptions: const InteractionOptions(
                 flags: InteractiveFlag.all,
               ),
+              onLongPress: (tapPosition, point) {
+                if (_isAdmin && Provider.of<ThemeProvider>(context, listen: false).isDeveloperMode) {
+                  setState(() {
+                    _currentPosition = point;
+                    if (_isRouteRecording) {
+                      _routePoints.add(point);
+                    }
+                  });
+                  _uploadLocation(point.latitude, point.longitude);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('已強制設定目前位置為: ${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}')),
+                  );
+                }
+              },
             ),
             children: [
               // OSM Tile Layer
@@ -245,225 +491,347 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
               // 即時監聽 Firestore Locations 與 Missions
               StreamBuilder<QuerySnapshot>(
-                stream: _firestore
-                    .collection('locations')
-                    .where('status', isEqualTo: 'active')
-                    .snapshots(),
+                stream: _locationsStream,
                 builder: (context, locSnapshot) {
                   return StreamBuilder<QuerySnapshot>(
-                    stream: _firestore
-                        .collection('missions')
-                        .where('status', isEqualTo: 'active')
-                        .snapshots(),
+                    stream: _missionsStream,
                     builder: (context, misSnapshot) {
-                      if (locSnapshot.hasError || misSnapshot.hasError) return const SizedBox.shrink();
-                      if (!locSnapshot.hasData || !misSnapshot.hasData) return const SizedBox.shrink();
+                      return StreamBuilder<QuerySnapshot>(
+                        stream: _usersStream,
+                        builder: (context, userSnapshot) {
+                          if (locSnapshot.hasError || misSnapshot.hasError || userSnapshot.hasError) return const SizedBox.shrink();
+                          if (!locSnapshot.hasData || !misSnapshot.hasData || !userSnapshot.hasData) return const SizedBox.shrink();
 
-                      final locDocs = locSnapshot.data!.docs;
-                      final misDocs = misSnapshot.data!.docs;
-                      
-                      final filteredLocDocs = locDocs.where((doc) {
-                        if (_missionFilter == 'all') return true;
-                        final data = doc.data() as Map<String, dynamic>;
-                        return data['category'] == _missionFilter;
-                      }).toList();
+                          final locDocs = locSnapshot.data!.docs;
+                          final misDocs = misSnapshot.data!.docs;
+                          
+                          final filteredLocDocs = locDocs.where((doc) {
+                            if (_missionFilter == 'all') return true;
+                            final data = doc.data() as Map<String, dynamic>;
+                            return data['category'] == _missionFilter;
+                          }).toList();
 
-                      final filteredMisDocs = misDocs.where((doc) {
-                        if (_missionFilter == 'all') return true;
-                        final data = doc.data() as Map<String, dynamic>;
-                        return data['category'] == _missionFilter;
-                      }).toList();
+                          final filteredMisDocs = misDocs.where((doc) {
+                            if (_missionFilter == 'all') return true;
+                            final data = doc.data() as Map<String, dynamic>;
+                            return data['category'] == _missionFilter;
+                          }).toList();
 
-                      // 1. 領地控制圓圈 (CircleLayer) (僅限 locations)
-                      final circles = filteredLocDocs.map((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        
-                        // 動態計算佔領陣營
-                        final checkIns = data['checkInsByFaction'] as Map<String, dynamic>? ?? {'red': 0, 'green': 0, 'blue': 0};
-                        int r = (checkIns['red'] ?? 0) as int;
-                        int g = (checkIns['green'] ?? 0) as int;
-                        int b = (checkIns['blue'] ?? 0) as int;
-                        
-                        Color color = Colors.grey; // 預設無人佔領
-                        if (r > g && r > b) {
-                          color = FactionColors.redPrimary;
-                        } else if (g > r && g > b) {
-                          color = FactionColors.greenPrimary;
-                        } else if (b > r && b > g) {
-                          color = FactionColors.bluePrimary;
-                        } else if (r > 0 || g > 0 || b > 0) {
-                          color = Colors.white; // 平手
-                        }
+                          // 1. 領地控制圓圈 (CircleLayer) (僅限 locations)
+                          final circles = filteredLocDocs.map((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            
+                            // 動態計算佔領陣營
+                            final checkIns = data['checkInsByFaction'] as Map<String, dynamic>? ?? {'red': 0, 'green': 0, 'blue': 0};
+                            int r = (checkIns['red'] ?? 0) as int;
+                            int g = (checkIns['green'] ?? 0) as int;
+                            int b = (checkIns['blue'] ?? 0) as int;
+                            
+                            Color color = Colors.grey; // 預設無人佔領
+                            if (r > g && r > b) {
+                              color = FactionColors.redPrimary;
+                            } else if (g > r && g > b) {
+                              color = FactionColors.greenPrimary;
+                            } else if (b > r && b > g) {
+                              color = FactionColors.bluePrimary;
+                            } else if (r > 0 || g > 0 || b > 0) {
+                              color = Colors.white; // 平手
+                            }
 
-                        final totalCheckIns = data['totalCheckIns'] ?? 0;
-                        final radius = (50.0 + (totalCheckIns * 5)).clamp(50.0, 300.0);
-                        
-                        return CircleMarker(
-                          point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
-                          radius: radius,
-                          useRadiusInMeter: true,
-                          color: color.withValues(alpha: 0.35),
-                          borderColor: color.withValues(alpha: 0.9),
-                          borderStrokeWidth: 3,
-                        );
-                      }).toList();
+                            final totalCheckIns = data['totalCheckIns'] ?? 0;
+                            final radius = (50.0 + (totalCheckIns * 5)).clamp(50.0, 300.0);
+                            
+                            return CircleMarker(
+                              point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
+                              radius: radius,
+                              useRadiusInMeter: true,
+                              color: color.withValues(alpha: 0.35),
+                              borderColor: color.withValues(alpha: 0.9),
+                              borderStrokeWidth: 3,
+                            );
+                          }).toList();
 
-                      // 2. 任務點地標 (MarkerLayer) - 合併 Locations 與 Missions
-                      List<Marker> markers = [];
-                      
-                      // 加入 Locations Markers
-                      markers.addAll(filteredLocDocs.map((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        final color = _categoryColor(data['category'] ?? '');
-                        
-                        String emoji = '📍';
-                        if (data['category'] == 'heritage') emoji = '🏛️';
-                        if (data['category'] == 'food') emoji = '🍜';
-                        if (data['category'] == 'cafe') emoji = '☕';
-                        
-                        return Marker(
-                          point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
-                          width: 56,
-                          height: 70,
-                          child: GestureDetector(
-                            onTap: () {
-                              data['id'] = doc.id;
-                              data['emoji'] = emoji;
-                              _showMissionSheet(data);
-                            },
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 46,
-                                  height: 46,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2.5),
-                                    boxShadow: [
-                                      BoxShadow(color: color.withValues(alpha: 0.55), blurRadius: 10, spreadRadius: 2),
-                                    ],
-                                  ),
-                                  child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
-                                ),
-                                CustomPaint(size: const Size(14, 8), painter: _MarkerArrow(color: color)),
-                              ],
-                            ),
-                          ),
-                        );
-                      }));
-
-                      // 加入 Missions Markers (帶有黃色圈圈與驚嘆號)
-                      markers.addAll(filteredMisDocs.map((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        if (!data.containsKey('lat') || !data.containsKey('lng')) return null;
-                        
-                        final color = _categoryColor(data['category'] ?? '');
-                        String emoji = data['imageEmoji'] ?? '📍';
-                        
-                        return Marker(
-                          point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
-                          width: 66, // 稍微大一點以容納黃色外圈
-                          height: 80,
-                          child: GestureDetector(
-                            onTap: () {
-                              data['id'] = doc.id;
-                              data['emoji'] = emoji;
-                              _showMissionSheet(data);
-                            },
-                            child: Stack(
-                              alignment: Alignment.topCenter,
-                              children: [
-                                Column(
+                          // 2. 任務點地標 (MarkerLayer) - 合併 Locations 與 Missions
+                          List<Marker> markers = [];
+                          
+                          // 加入 Locations Markers
+                          markers.addAll(filteredLocDocs.map((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            final color = _categoryColor(data['category'] ?? '');
+                            
+                            String emoji = '📍';
+                            if (data['category'] == 'heritage') emoji = '🏛️';
+                            if (data['category'] == 'food') emoji = '🍜';
+                            if (data['category'] == 'cafe') emoji = '☕';
+                            
+                            return Marker(
+                              point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
+                              width: 56,
+                              height: 70,
+                              child: GestureDetector(
+                                onTap: () {
+                                  data['id'] = doc.id;
+                                  data['emoji'] = emoji;
+                                  _showMissionSheet(data);
+                                },
+                                child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Container(
-                                      width: 50,
-                                      height: 50,
+                                      width: 46,
+                                      height: 46,
                                       decoration: BoxDecoration(
                                         color: color,
                                         shape: BoxShape.circle,
-                                        border: Border.all(color: FactionColors.gold, width: 3.5), // 黃色圓圈
+                                        border: Border.all(color: Colors.white, width: 2.5),
                                         boxShadow: [
-                                          BoxShadow(color: FactionColors.gold.withValues(alpha: 0.6), blurRadius: 12, spreadRadius: 3),
+                                          BoxShadow(color: color.withValues(alpha: 0.55), blurRadius: 10, spreadRadius: 2),
                                         ],
                                       ),
                                       child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
                                     ),
-                                    CustomPaint(size: const Size(14, 8), painter: _MarkerArrow(color: FactionColors.gold)),
+                                    CustomPaint(size: const Size(14, 8), painter: _MarkerArrow(color: color)),
                                   ],
                                 ),
-                                // 驚嘆號小徽章
-                                Positioned(
-                                  top: 0,
-                                  right: 0,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(2),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(Icons.priority_high, color: Colors.white, size: 14),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).whereType<Marker>());
+                              ),
+                            );
+                          }));
 
-                      return Stack(
-                        children: [
-                          if (_showFactionLayer)
-                            PolygonLayer(
-                              polygons: _buildFactionPolygons(locDocs),
-                            ),
-                          CircleLayer(circles: circles),
-                          // 跑圖軌跡
-                          if (_routePoints.isNotEmpty)
-                            PolylineLayer(
-                              polylines: [
-                                Polyline(
-                                  points: _routePoints,
-                                  strokeWidth: 4.0,
-                                  color: FactionColors.gold,
-                                ),
-                              ],
-                            ),
-                          MarkerLayer(markers: markers),
-                          
-                          // 公車動態 Markers
-                          if (_showBus)
-                            Consumer<BusService>(
-                              builder: (context, busService, child) {
-                                return MarkerLayer(
-                                  markers: busService.busStops.map((stop) {
-                                    return Marker(
-                                      point: stop.position,
-                                      width: 40,
-                                      height: 40,
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text('${stop.name}: ${stop.estimateTime > 0 ? "約 ${stop.estimateTime ~/ 60} 分鐘到站" : "未發車或末班車已過"}')),
-                                          );
-                                        },
-                                        child: Container(
+                          // 加入 Missions Markers (帶有黃色圈圈與驚嘆號)
+                          markers.addAll(filteredMisDocs.map((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            if (!data.containsKey('lat') || !data.containsKey('lng')) return null;
+                            
+                            final color = _categoryColor(data['category'] ?? '');
+                            String emoji = data['imageEmoji'] ?? '📍';
+                            
+                            return Marker(
+                              point: LatLng(data['lat'] ?? 0.0, data['lng'] ?? 0.0),
+                              width: 66, // 稍微大一點以容納黃色外圈
+                              height: 80,
+                              child: GestureDetector(
+                                onTap: () {
+                                  data['id'] = doc.id;
+                                  data['emoji'] = emoji;
+                                  _showMissionSheet(data);
+                                },
+                                child: Stack(
+                                  alignment: Alignment.topCenter,
+                                  children: [
+                                    Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          width: 50,
+                                          height: 50,
                                           decoration: BoxDecoration(
-                                            color: Colors.blueAccent,
+                                            color: color,
                                             shape: BoxShape.circle,
-                                            border: Border.all(color: Colors.white, width: 2),
+                                            border: Border.all(color: FactionColors.gold, width: 3.5), // 黃色圓圈
+                                            boxShadow: [
+                                              BoxShadow(color: FactionColors.gold.withValues(alpha: 0.6), blurRadius: 12, spreadRadius: 3),
+                                            ],
                                           ),
-                                          child: const Icon(Icons.directions_bus, color: Colors.white, size: 20),
+                                          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
+                                        ),
+                                        CustomPaint(size: const Size(14, 8), painter: _MarkerArrow(color: FactionColors.gold)),
+                                      ],
+                                    ),
+                                    // 驚嘆號小徽章
+                                    Positioned(
+                                      top: 0,
+                                      right: 0,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(2),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(Icons.priority_high, color: Colors.white, size: 14),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).whereType<Marker>());
+
+                          return Stack(
+                            children: [
+                              if (_showFactionLayer)
+                                PolygonLayer(
+                                  polygons: _buildFactionPolygons(locDocs),
+                                ),
+                              CircleLayer(circles: circles),
+                              // 跑圖軌跡
+                              if (_routePoints.isNotEmpty)
+                                PolylineLayer(
+                                  polylines: [
+                                    Polyline(
+                                      points: _routePoints,
+                                      strokeWidth: 4.0,
+                                      color: FactionColors.gold,
+                                    ),
+                                  ],
+                                ),
+                              
+                              // 選擇的公車路線
+                              if (_selectedBusRoute != null)
+                                Consumer<BusService>(
+                                  builder: (context, busService, child) {
+                                    final route = _selectedBusRoute!;
+                                    return PolylineLayer(
+                                      polylines: [
+                                        Polyline(
+                                          points: route.stops.map((s) => s.position).toList(),
+                                          strokeWidth: 4.0,
+                                          color: Colors.blueAccent.withValues(alpha: 0.7),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              MarkerLayer(markers: markers),
+                              
+                              // 定位圖標 (我的位置)
+                              if (_currentPosition != null)
+                                MarkerLayer(
+                                  markers: [
+                                    Marker(
+                                      point: _currentPosition!,
+                                      width: 48,
+                                      height: 48,
+                                      child: AnimatedBuilder(
+                                        animation: _recordingPulse,
+                                        builder: (context, _) => Container(
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.blueAccent.withValues(alpha: 0.15 + 0.2 * _recordingPulse.value),
+                                            border: Border.all(color: Colors.blueAccent, width: 2),
+                                            boxShadow: [
+                                              BoxShadow(color: Colors.blueAccent.withValues(alpha: 0.3), blurRadius: 8),
+                                            ],
+                                          ),
+                                          child: const Center(
+                                            child: Icon(Icons.navigation, color: Colors.blueAccent, size: 20),
+                                          ),
                                         ),
                                       ),
+                                    ),
+                                  ],
+                                ),
+                              
+                              // 公車動態 Markers
+                              if (_showBus)
+                                Consumer<BusService>(
+                                  builder: (context, busService, child) {
+                                    final Map<String, List<BusStopData>> groupedStops = {};
+                                    for (var route in busService.routes) {
+                                      for (var stop in route.stops) {
+                                        groupedStops[stop.name] ??= [];
+                                        groupedStops[stop.name]!.add(stop);
+                                      }
+                                    }
+
+                                    final now = DateTime.now();
+                                    final today = now.weekday.toString();
+                                    final nowStr = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+
+                                    return MarkerLayer(
+                                      markers: groupedStops.entries.map((entry) {
+                                        final stopName = entry.key;
+                                        final stopsList = entry.value;
+                                        final position = stopsList.first.position;
+
+                                        int upcomingCount = 0;
+                                        for (var stop in stopsList) {
+                                          final times = stop.schedules[today] ?? [];
+                                          upcomingCount += times.where((t) => t.compareTo(nowStr) >= 0).length;
+                                        }
+
+                                        Color busColor;
+                                        if (upcomingCount > 1) {
+                                          busColor = Colors.green; // 還有班車
+                                        } else if (upcomingCount == 1) {
+                                          busColor = Colors.red; // 末班車
+                                        } else {
+                                          busColor = Colors.grey; // 末班車已過
+                                        }
+
+                                        return Marker(
+                                          point: position,
+                                          width: 40,
+                                          height: 40,
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              _showBusSchedule(context, stopName, busService.routes);
+                                            },
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: busColor,
+                                                shape: BoxShape.circle,
+                                                border: Border.all(color: Colors.white, width: 2),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: busColor.withValues(alpha: 0.5),
+                                                    blurRadius: 8,
+                                                    spreadRadius: 2,
+                                                  ),
+                                                ],
+                                              ),
+                                              child: const Icon(Icons.directions_bus, color: Colors.white, size: 20),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
                                     );
-                                  }).toList(),
-                                );
-                              },
-                            ),
-                        ],
+                                  },
+                                ),
+                                
+                              // UBike Markers
+                              if (_showUbike)
+                                Consumer<UbikeService>(
+                                  builder: (context, ubikeService, child) {
+                                    return MarkerLayer(
+                                      markers: ubikeService.stations.map((station) {
+                                        Color uColor;
+                                        IconData uIcon = Icons.pedal_bike;
+                                        
+                                        if (station.status != 1) {
+                                          uColor = Colors.grey;
+                                          uIcon = Icons.block;
+                                        } else if (station.availableBikes == 0 || station.availableReturns == 0) {
+                                          uColor = Colors.red;
+                                        } else if (station.availableBikes > 3 && station.availableReturns > 3) {
+                                          uColor = Colors.green;
+                                        } else {
+                                          uColor = Colors.orange;
+                                        }
+                                        return Marker(
+                                          point: station.position,
+                                          width: 40,
+                                          height: 40,
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              _showUbikeInfo(context, station);
+                                            },
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: uColor,
+                                                shape: BoxShape.circle,
+                                                border: Border.all(color: Colors.white, width: 2),
+                                              ),
+                                              child: Icon(uIcon, color: Colors.white, size: 20),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    );
+                                  },
+                                ),
+                            ],
+                          );
+                        },
                       );
                     },
                   );
@@ -533,7 +901,7 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 8),
                         decoration: BoxDecoration(
-                          color: FactionColors.cardBg.withValues(alpha: 0.92),
+                          color: (isDarkMode ? FactionColors.cardBg : Colors.white).withValues(alpha: 0.92),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: factionColor.withValues(alpha: 0.6),
@@ -560,35 +928,7 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
-                    const Spacer(),
-                    // 積分
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: FactionColors.cardBg.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: FactionColors.gold.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star,
-                              color: FactionColors.gold, size: 16),
-                          SizedBox(width: 4),
-                          Text(
-                            '3,850',
-                            style: TextStyle(
-                              color: FactionColors.gold,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+
                   ],
                 ),
               ),
@@ -708,6 +1048,8 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             bottom: isSimplified ? 40 : _sheetHeight + 16,
             right: 16,
             child: MapMultiFab(
+              onUbike: toggleUbike,
+              showUbike: _showUbike,
               onAi: () {
                 showModalBottomSheet(
                   context: context,
@@ -729,7 +1071,13 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   }
                 }
               },
-              onLocate: () => _mapController.move(_chiayi, 15),
+              onLocate: () {
+                if (_currentPosition != null) {
+                  _mapController.move(_currentPosition!, 15);
+                } else {
+                  _mapController.move(_chiayi, 15);
+                }
+              },
               onRoute: _toggleRouteRecording,
               onZoomIn: () {
                 final cur = _mapController.camera.zoom;
@@ -771,6 +1119,37 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     builder: (context) => const BackpackBottomSheet(),
                   );
                 },
+              ),
+            ),
+
+          // ── 左側：管理員快速新增按鈕 (僅開發者模式 & 管理員顯示) ────────────────────────────
+          if (_isAdmin && Provider.of<ThemeProvider>(context).isDeveloperMode && !isSimplified)
+            Positioned(
+              bottom: _sheetHeight + 80,
+              left: 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FloatingActionButton(
+                    heroTag: 'admin_add_store',
+                    mini: true,
+                    backgroundColor: Colors.green,
+                    child: const Icon(Icons.storefront, color: Colors.white),
+                    onPressed: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const AddStoreScreen()));
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  FloatingActionButton(
+                    heroTag: 'admin_add_location',
+                    mini: true,
+                    backgroundColor: Colors.blueAccent,
+                    child: const Icon(Icons.add_location, color: Colors.white),
+                    onPressed: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const AddLocationScreen()));
+                    },
+                  ),
+                ],
               ),
             ),
 
@@ -1125,12 +1504,51 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             Text(m['emoji'] as String,
                 style: const TextStyle(fontSize: 52)),
             const SizedBox(height: 12),
-            Text(m['name'] as String,
-                style: const TextStyle(
-                  color: FactionColors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                )),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    m['name'] as String,
+                    style: const TextStyle(
+                      color: FactionColors.textPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.qr_code),
+                  color: color,
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text('打卡 QR Code: ${m['name']}'),
+                        content: SizedBox(
+                          width: 200,
+                          height: 200,
+                          child: Center(
+                            child: QrImageView(
+                              data: 'mission:${m['id']}',
+                              version: QrVersions.auto,
+                              size: 200.0,
+                            ),
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('關閉'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
             const SizedBox(height: 6),
             Text(
               '基礎積分 +$basePoints',
@@ -1169,37 +1587,175 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               },
             ),
             const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.qr_code_scanner),
-                label: const Text('掃描打卡',
-                    style: TextStyle(fontSize: 16)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: color,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                onPressed: () {
-                  Navigator.pop(context); // 關閉任務彈窗
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => SimulatedScannerPage(
-                        mission: m,
-                        userFaction: _faction,
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.qr_code_scanner),
+                      label: const Text('掃描', style: TextStyle(fontSize: 16)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: color,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
+                      onPressed: () async {
+                        Navigator.pop(context); // 關閉任務彈窗
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ScannerScreen(
+                              missionData: m,
+                            ),
+                          ),
+                        );
+                        if (result == true) {
+                          _performGpsCheckIn(m, bypassDistanceCheck: true); // 借用相同的打卡邏輯
+                        }
+                      },
                     ),
-                  );
-                },
-              ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.location_on),
+                      label: const Text('GPS 打卡', style: TextStyle(fontSize: 16)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: color,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context); // 先關閉任務彈窗
+                        _performGpsCheckIn(m);
+                      },
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _performGpsCheckIn(Map<String, dynamic> m, {bool bypassDistanceCheck = false}) async {
+    double meter = 0.0;
+    if (!bypassDistanceCheck) {
+      if (_currentPosition == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('無法取得目前位置，請確認定位已開啟。')));
+        return;
+      }
+
+      final double mLat = (m['lat'] as num).toDouble();
+      final double mLng = (m['lng'] as num).toDouble();
+      const Distance distance = Distance();
+      meter = distance(
+        _currentPosition!,
+        LatLng(mLat, mLng),
+      );
+
+      if (meter > 100) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('距離目標太遠！目前距離: ${meter.toStringAsFixed(1)} 公尺 (需於 100 公尺內)')));
+        return;
+      }
+    }
+
+    // 關閉彈窗
+    // Navigator.pop(context); // 已經在外面 pop 掉了，或是在 GPS 按下時才 pop
+
+    // 執行打卡邏輯
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final faction = _faction;
+    final int basePoints = (m['basePoints'] ?? 100) as int;
+    String missionFaction = 'none';
+    if (m['category'] == 'food') missionFaction = 'red';
+    if (m['category'] == 'heritage') missionFaction = 'green';
+    if (m['category'] == 'cafe') missionFaction = 'blue';
+
+    final bool hasBonus = faction == missionFaction;
+    final int bonusPoints = hasBonus ? (basePoints * 0.2).toInt() : 0;
+    final int totalEarned = basePoints + bonusPoints;
+
+    try {
+      final missionRef = _firestore.collection('missions').doc(m['id']);
+      final userPublicRef = _firestore.collection('users_public').doc(user.uid);
+
+      await _firestore.runTransaction((transaction) async {
+        transaction.update(missionRef, {
+          'totalCheckIns': FieldValue.increment(1),
+          'checkInsByFaction.$faction': FieldValue.increment(1),
+        });
+        transaction.update(userPublicRef, {
+          'score': FieldValue.increment(totalEarned),
+        });
+      });
+
+      final updatedDoc = await missionRef.get();
+      final updatedData = updatedDoc.data() ?? {};
+      final checkIns = updatedData['checkInsByFaction'] as Map<String, dynamic>? ?? {'red': 0, 'green': 0, 'blue': 0};
+
+
+
+      if (!mounted) return;
+      
+      showDialog(
+        context: context,
+        builder: (dialogCtx) {
+          final isDarkMode = Theme.of(dialogCtx).brightness == Brightness.dark;
+          return AlertDialog(
+            backgroundColor: isDarkMode ? FactionColors.darkBg : Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Row(
+              children: [
+                Text(m['emoji'] as String, style: const TextStyle(fontSize: 28)),
+                const SizedBox(width: 8),
+                Text('GPS 打卡成功！', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('距離: ${meter.toStringAsFixed(1)} 公尺', style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54)),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.star, color: FactionColors.gold, size: 24),
+                    const SizedBox(width: 6),
+                    Text('+$totalEarned 積分', style: const TextStyle(color: FactionColors.gold, fontSize: 24, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                if (hasBonus) ...[
+                  const SizedBox(height: 4),
+                  Center(
+                    child: Text('🎉 同陣營加成額外 +$bonusPoints 積分！', style: TextStyle(color: FactionColors.forFaction(faction), fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                style: ElevatedButton.styleFrom(backgroundColor: FactionColors.forFaction(faction)),
+                child: const Text('確認', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('打卡失敗: $e')));
+    }
   }
   Widget _buildTerritoryStats(Map<String, dynamic> m) {
     final checkIns = m['checkInsByFaction'] as Map<String, dynamic>? ?? {'red': 0, 'green': 0, 'blue': 0};
@@ -1325,6 +1881,194 @@ class MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     
     return polygons;
   }
+
+  void _showBusSchedule(BuildContext context, String stopName, List<BusRouteData> allRoutes) {
+    final passingRoutes = allRoutes.where((r) => r.stops.any((s) => s.name == stopName)).toList();
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDarkMode ? FactionColors.darkBg : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.directions_bus, color: Colors.blueAccent, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      stopName,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: isDarkMode ? FactionColors.textPrimary : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              Expanded(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: passingRoutes.length,
+                  itemBuilder: (context, index) {
+                    final route = passingRoutes[index];
+                    
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        route.routeName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDarkMode ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                      subtitle: Builder(
+                        builder: (ctx) {
+                          try {
+                            final stopData = route.stops.firstWhere((s) => s.name == stopName);
+                            final now = DateTime.now();
+                            final today = now.weekday.toString();
+                            final nowStr = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+
+                            final times = stopData.schedules[today] ?? [];
+                            final upcomingTimes = times.where((t) => t.compareTo(nowStr) >= 0).toList();
+                            
+                            if (upcomingTimes.isEmpty) {
+                              return const Text("末班車已過", style: TextStyle(color: Colors.grey));
+                            } else {
+                              final nextTime = upcomingTimes.first;
+                              final parts = nextTime.split(':');
+                              String diffText = "";
+                              if (parts.length == 2) {
+                                final nextH = int.tryParse(parts[0]) ?? 0;
+                                final nextM = int.tryParse(parts[1]) ?? 0;
+                                final diff = (nextH * 60 + nextM) - (now.hour * 60 + now.minute);
+                                diffText = " (約 $diff 分鐘)";
+                              }
+                              final subtitleColor = upcomingTimes.length == 1 ? Colors.red : Colors.green;
+                              return Text(
+                                "預計抵達: $nextTime$diffText",
+                                style: TextStyle(color: subtitleColor, fontWeight: FontWeight.w500),
+                              );
+                            }
+                          } catch (e) {
+                            return const SizedBox.shrink();
+                          }
+                        }
+                      ),
+                      trailing: const Icon(Icons.map, color: Colors.blueAccent),
+                      onTap: () {
+                        setState(() {
+                          _selectedBusRoute = route;
+                        });
+                        Navigator.pop(context);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showUbikeInfo(BuildContext context, UbikeStation station) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: isDarkMode ? FactionColors.darkBg : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.pedal_bike, color: Colors.green, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      station.name,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: isDarkMode ? FactionColors.textPrimary : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (station.status != 1)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Text(
+                    station.status == 0 ? '目前停止營運' : '站點尚未營運',
+                    style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              const Divider(),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildUbikeStatBox('可借車輛', station.availableBikes.toString(), Colors.blueAccent, isDarkMode),
+                  _buildUbikeStatBox('可還空位', station.availableReturns.toString(), Colors.orangeAccent, isDarkMode),
+                ],
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildUbikeStatBox(String label, String value, Color color, bool isDarkMode) {
+    return Container(
+      width: 120,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDarkMode ? FactionColors.cardBg : Colors.grey[100],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          Text(label, style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54, fontSize: 14)),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // Marker 底部三角箭頭
@@ -1345,303 +2089,5 @@ class _MarkerArrow extends CustomPainter {
 
   @override
   bool shouldRepaint(_) => false;
-}
-
-// 實裝手機鏡頭/模擬掃描 QR Code 頁面
-class SimulatedScannerPage extends StatefulWidget {
-  final Map<String, dynamic> mission;
-  final String userFaction;
-  
-  const SimulatedScannerPage({
-    super.key,
-    required this.mission,
-    required this.userFaction,
-  });
-
-  @override
-  State<SimulatedScannerPage> createState() => _SimulatedScannerPageState();
-}
-
-class _SimulatedScannerPageState extends State<SimulatedScannerPage> with SingleTickerProviderStateMixin {
-  late AnimationController _scanController;
-  late Animation<double> _scanAnimation;
-  bool _isScanningDone = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scanController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-
-    _scanAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(_scanController);
-  }
-
-  @override
-  void dispose() {
-    _scanController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _performCheckIn() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final m = widget.mission;
-    final faction = widget.userFaction;
-
-    // 計算分數
-    final int basePoints = (m['basePoints'] ?? 100) as int;
-    String missionFaction = 'none';
-    if (m['category'] == 'food') missionFaction = 'red';
-    if (m['category'] == 'heritage') missionFaction = 'green';
-    if (m['category'] == 'cafe') missionFaction = 'blue';
-
-    final bool hasBonus = faction == missionFaction;
-    final int bonusPoints = hasBonus ? (basePoints * 0.2).toInt() : 0;
-    final int totalEarned = basePoints + bonusPoints;
-
-    try {
-      final missionRef = FirebaseFirestore.instance.collection('missions').doc(m['id']);
-      final userPublicRef = FirebaseFirestore.instance.collection('users_public').doc(user.uid);
-
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        transaction.update(missionRef, {
-          'totalCheckIns': FieldValue.increment(1),
-          'checkInsByFaction.$faction': FieldValue.increment(1),
-        });
-        transaction.update(userPublicRef, {
-          'totalScore': FieldValue.increment(totalEarned),
-        });
-      });
-
-      final updatedDoc = await FirebaseFirestore.instance.collection('missions').doc(m['id']).get();
-      final updatedData = updatedDoc.data() ?? {};
-      final checkIns = updatedData['checkInsByFaction'] as Map<String, dynamic>? ?? {'red': 0, 'green': 0, 'blue': 0};
-
-      int rCount = (checkIns['red'] ?? 0) as int;
-      int gCount = (checkIns['green'] ?? 0) as int;
-      int bCount = (checkIns['blue'] ?? 0) as int;
-
-      if (!mounted) return;
-      Navigator.pop(context); // 關閉掃描頁
-
-      // 彈出打卡成功與分數、勢力次數結算
-      showDialog(
-        context: context,
-        builder: (dialogCtx) {
-          final isDarkMode = Provider.of<ThemeProvider>(dialogCtx, listen: false).isDarkMode;
-          return AlertDialog(
-            backgroundColor: isDarkMode ? FactionColors.darkBg : Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-            title: Row(
-              children: [
-                Text(m['emoji'] as String, style: const TextStyle(fontSize: 28)),
-                const SizedBox(width: 8),
-                Text('打卡成功！', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('已征服【${m['name']}】', style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54)),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.star, color: FactionColors.gold, size: 24),
-                    const SizedBox(width: 6),
-                    Text(
-                      '+$totalEarned 積分',
-                      style: const TextStyle(color: FactionColors.gold, fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                if (hasBonus) ...[
-                  const SizedBox(height: 4),
-                  Center(
-                    child: Text(
-                      '🎉 享有同陣營加成額外 +$bonusPoints 積分！',
-                      style: TextStyle(color: FactionColors.forFaction(faction), fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                const Divider(),
-                const SizedBox(height: 10),
-                const Text('🔥 各方勢力打卡總次數：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: FactionColors.gold)),
-                const SizedBox(height: 8),
-                _buildFactionResultRow('🔴 美食紅勢力：', rCount, FactionColors.redPrimary),
-                const SizedBox(height: 6),
-                _buildFactionResultRow('🟢 古蹟綠勢力：', gCount, FactionColors.greenPrimary),
-                const SizedBox(height: 6),
-                _buildFactionResultRow('🔵 咖啡藍勢力：', bCount, FactionColors.bluePrimary),
-              ],
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () => Navigator.pop(dialogCtx),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: FactionColors.forFaction(faction),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('確認', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          );
-        },
-      );
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('打卡失敗: $e')),
-      );
-    }
-  }
-
-  Widget _buildFactionResultRow(String label, int count, Color color) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 13, color: Colors.white70)),
-        Text('$count 次完成', style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.bold)),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          // 鏡頭畫面/相機底座
-          Positioned.fill(
-            child: ClipRect(
-              child: MobileScanner(
-                controller: MobileScannerController(
-                  detectionSpeed: DetectionSpeed.normal,
-                  facing: CameraFacing.back,
-                ),
-                onDetect: (capture) {
-                  final List<Barcode> barcodes = capture.barcodes;
-                  for (final barcode in barcodes) {
-                    if (barcode.rawValue != null && !_isScanningDone) {
-                      _isScanningDone = true;
-                      _performCheckIn();
-                      break;
-                    }
-                  }
-                },
-              ),
-            ),
-          ),
-
-          // 深色覆蓋遮罩以突顯掃描框
-          Positioned.fill(
-            child: Container(
-              color: Colors.black54,
-            ),
-          ),
-          
-          // 掃描框與介面提示
-          SafeArea(
-            child: Column(
-              children: [
-                const SizedBox(height: 40),
-                const Text(
-                  '📸 對準 QR Code 掃描打卡',
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  '請將條碼置於下方金色框線中',
-                  style: TextStyle(color: Colors.white60, fontSize: 13),
-                ),
-                const Spacer(),
-                
-                // 掃描框
-                Center(
-                  child: Stack(
-                    alignment: Alignment.center,
-                    clipBehavior: Clip.none,
-                    children: [
-                      // 邊框
-                      Container(
-                        width: 250,
-                        height: 250,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: FactionColors.gold, width: 3),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                      // 掃描雷射線
-                      AnimatedBuilder(
-                        animation: _scanAnimation,
-                        builder: (context, child) {
-                          return Positioned(
-                            top: 10 + (230 * _scanAnimation.value),
-                            left: 10,
-                            right: 10,
-                            child: Container(
-                              height: 3,
-                              decoration: BoxDecoration(
-                                color: Colors.greenAccent,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.greenAccent.withValues(alpha: 0.8),
-                                    blurRadius: 8,
-                                    spreadRadius: 1,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      
-                      // 模擬掃描按鈕 (測試用，極度方便在電腦模擬器無鏡頭時測試)
-                      Positioned(
-                        bottom: -45,
-                        child: TextButton(
-                          onPressed: () {
-                            if (!_isScanningDone) {
-                              _isScanningDone = true;
-                              _performCheckIn();
-                            }
-                          },
-                          child: const Text(
-                            '⚡ 點此模擬掃描成功 (測試專用)',
-                            style: TextStyle(color: FactionColors.gold, fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                        ),
-                      )
-                    ],
-                  ),
-                ),
-                
-                const Spacer(),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 40.0),
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.white54),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                    ),
-                    child: const Text('取消返回', style: TextStyle(color: Colors.white70)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 

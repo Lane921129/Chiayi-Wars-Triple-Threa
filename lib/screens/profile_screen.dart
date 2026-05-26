@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import '../services/map_cache_service.dart';
@@ -9,6 +11,7 @@ import 'api_key_screen.dart';
 import '../services/seed_service.dart';
 import '../services/auth_service.dart';
 import 'admin_panel_screen.dart';
+import 'friends_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -43,8 +46,10 @@ class ProfileScreen extends StatelessWidget {
                     // 帳號資訊
                     ListTile(
                       leading: Icon(Icons.person, color: isDarkMode ? FactionColors.textPrimary : Colors.black87),
-                      title: Text('帳號', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                      title: Text('帳號 (點擊編輯)', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
                       subtitle: Text(user?.email ?? '訪客', style: TextStyle(color: isDarkMode ? FactionColors.textSecondary : Colors.black54)),
+                      trailing: const Icon(Icons.edit, size: 16, color: Colors.grey),
+                      onTap: () => _showEditProfileDialog(context, user, isDarkMode),
                     ),
                     const Divider(color: Colors.grey),
 
@@ -224,6 +229,16 @@ class ProfileScreen extends StatelessWidget {
                       },
                     ),
 
+                    // 社群好友
+                    ListTile(
+                      leading: const Icon(Icons.people, color: FactionColors.gold),
+                      title: Text('社群好友', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                      onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const FriendsScreen()));
+                      },
+                    ),
+                    const Divider(color: Colors.grey),
+
                     // 績效與跑圖紀錄
                     ListTile(
                       leading: const Icon(Icons.history, color: FactionColors.gold),
@@ -265,6 +280,99 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  void _showEditProfileDialog(BuildContext context, User? user, bool isDarkMode) {
+    if (user == null) return;
+    
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final nameController = TextEditingController();
+        final avatarController = TextEditingController();
+
+        return FutureBuilder<DocumentSnapshot>(
+          future: FirebaseFirestore.instance.collection('users_public').doc(user.uid).get(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const AlertDialog(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                content: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final data = snapshot.data?.data() as Map<String, dynamic>?;
+            // Only set text once when loaded
+            if (nameController.text.isEmpty && avatarController.text.isEmpty) {
+              nameController.text = data?['displayName'] ?? '';
+              avatarController.text = data?['avatarUrl'] ?? '';
+            }
+
+            return AlertDialog(
+              backgroundColor: isDarkMode ? FactionColors.cardBg : Colors.white,
+              title: Text('編輯個人檔案', style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
+                      decoration: InputDecoration(
+                        labelText: '顯示名稱',
+                        labelStyle: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: avatarController,
+                      style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
+                      decoration: InputDecoration(
+                        labelText: '照片 URL',
+                        labelStyle: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('UID', style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black87)),
+                      subtitle: Text(user.uid, style: TextStyle(fontSize: 12, color: isDarkMode ? Colors.white54 : Colors.grey)),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.copy, color: Colors.blueAccent),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: user.uid));
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已複製 UID')));
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    await FirebaseFirestore.instance.collection('users_public').doc(user.uid).update({
+                      'displayName': nameController.text.trim(),
+                      'avatarUrl': avatarController.text.trim(),
+                    });
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已儲存變更')));
+                      Navigator.pop(ctx);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: FactionColors.gold),
+                  child: const Text('儲存', style: TextStyle(color: Colors.black87)),
+                ),
+              ],
+            );
+          }
+        );
+      }
     );
   }
 }

@@ -4,14 +4,16 @@ import '../theme/app_theme.dart';
 class MapMultiFab extends StatefulWidget {
   final VoidCallback onAi;
   final VoidCallback onBus;
+  final VoidCallback onUbike;
   final VoidCallback onLocate;
-  final VoidCallback onRoute;
+  final Future<void> Function() onRoute;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
   final VoidCallback onToggleLayer;
   final bool showFactionLayer;
   final bool isRouteRecording;
   final bool showBus;
+  final bool showUbike;
   final Color factionColor;
   final AnimationController recordingPulse;
   final bool? isOpen; // 外部控制開關 (簡潔模式用)
@@ -21,6 +23,7 @@ class MapMultiFab extends StatefulWidget {
     super.key,
     required this.onAi,
     required this.onBus,
+    required this.onUbike,
     required this.onLocate,
     required this.onRoute,
     required this.onZoomIn,
@@ -29,6 +32,7 @@ class MapMultiFab extends StatefulWidget {
     required this.showFactionLayer,
     required this.isRouteRecording,
     required this.showBus,
+    required this.showUbike,
     required this.factionColor,
     required this.recordingPulse,
     this.isOpen,
@@ -148,7 +152,7 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
           widget.showFactionLayer ? Icons.layers : Icons.layers_outlined, 
           'map_layer', 
           widget.showFactionLayer ? Colors.orangeAccent : bgColor, 
-          405, 
+          460, 
           widget.onToggleLayer, 
           iconColor: widget.showFactionLayer ? Colors.white : widget.factionColor
         ),
@@ -158,7 +162,7 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
           Icons.add, 
           'map_zoom_in', 
           bgColor, 
-          350, 
+          405, 
           widget.onZoomIn, 
           iconColor: widget.factionColor
         ),
@@ -168,7 +172,7 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
           Icons.remove, 
           'map_zoom_out', 
           bgColor, 
-          295, 
+          350, 
           widget.onZoomOut, 
           iconColor: widget.factionColor
         ),
@@ -178,9 +182,19 @@ class _MapMultiFabState extends State<MapMultiFab> with SingleTickerProviderStat
           Icons.auto_awesome, 
           'map_ai', 
           FactionColors.gold, 
-          240, 
+          295, 
           widget.onAi, 
           iconColor: Colors.black87
+        ),
+
+        // 腳踏車動態
+        _buildItem(
+          widget.showUbike ? Icons.pedal_bike : Icons.pedal_bike_outlined,
+          'map_ubike',
+          widget.showUbike ? Colors.green : bgColor,
+          240,
+          widget.onUbike,
+          iconColor: widget.showUbike ? Colors.white : textColor,
         ),
         
         // 公車動態

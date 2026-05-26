@@ -22,6 +22,16 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
+    // 👇 1. 新增這段金鑰配置 (綁定你複製進來的 debug.keystore)
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.untitled3"
@@ -37,6 +47,10 @@ android {
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+        // 👇 2. 明確指定 debug 模式要使用我們上面設定的金鑰
+        debug {
             signingConfig = signingConfigs.getByName("debug")
         }
     }

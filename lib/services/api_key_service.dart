@@ -27,7 +27,7 @@ class ApiKeyService extends ChangeNotifier {
     _cwaKey = prefs.getString(_cwaKeyPref) ?? 'CWA-452D624D-8575-4637-A3B4-623979108A7C';
     _tdxClientId = prefs.getString(_tdxIdPref) ?? 's1122965-51b51f9e-67a1-4a10';
     _tdxClientSecret = prefs.getString(_tdxSecretPref) ?? '96635a58-dfd2-4d63-a023-1f8dc10b5de6';
-    _geminiKey = prefs.getString(_geminiKeyPref) ?? 'gen-lang-client-0752674216';
+    _geminiKey = prefs.getString(_geminiKeyPref) ?? '';
     notifyListeners();
   }
 

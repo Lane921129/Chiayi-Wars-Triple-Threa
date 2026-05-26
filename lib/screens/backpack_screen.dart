@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 
@@ -11,16 +13,60 @@ class BackpackBottomSheet extends StatefulWidget {
 }
 
 class _BackpackBottomSheetState extends State<BackpackBottomSheet> {
-  final List<Map<String, dynamic>> _items = [
-    {'name': '加速卷軸', 'icon': '📜', 'count': 3, 'desc': '使用後 30 分鐘內跑圖積分 +50%'},
-    {'name': '陣營號角', 'icon': '🎺', 'count': 1, 'desc': '向周圍 1 公里內的同陣營玩家發送集結通知'},
-    {'name': '體力藥水', 'icon': '🧪', 'count': 5, 'desc': '立即回復 50 點體力'},
-    {'name': '神祕羅盤', 'icon': '🧭', 'count': 2, 'desc': '揭露附近隱藏的特殊任務地點'},
-    {'name': '和平鴿', 'icon': '🕊️', 'count': 1, 'desc': '將敵方佔領圈的中立化時間縮短一半'},
-  ];
+  final user = FirebaseAuth.instance.currentUser;
+  late Stream<QuerySnapshot> _inventoryStream;
+  bool _isInitializing = false;
 
-  void _showUseDialog(BuildContext context, Map<String, dynamic> item, int index) {
-    int maxCount = item['count'] as int;
+  @override
+  void initState() {
+    super.initState();
+    if (user != null) {
+      _inventoryStream = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user!.uid)
+          .collection('inventory')
+          .snapshots();
+    }
+  }
+
+  Future<void> _initializeDefaultItems() async {
+    if (user == null || _isInitializing) return;
+    setState(() => _isInitializing = true);
+
+    try {
+      final defaultItems = [
+        {'itemType': 'speed_scroll', 'name': '加速卷軸', 'icon': '📜', 'quantity': 3, 'desc': '使用後 30 分鐘內跑圖積分 +50%'},
+        {'itemType': 'faction_horn', 'name': '陣營號角', 'icon': '🎺', 'quantity': 1, 'desc': '向周圍 1 公里內的同陣營玩家發送集結通知'},
+        {'itemType': 'stamina_potion', 'name': '體力藥水', 'icon': '🧪', 'quantity': 5, 'desc': '立即回復 50 點體力'},
+        {'itemType': 'mystic_compass', 'name': '神祕羅盤', 'icon': '🧭', 'quantity': 2, 'desc': '揭露附近隱藏的特殊任務地點'},
+        {'itemType': 'peace_dove', 'name': '和平鴿', 'icon': '🕊️', 'quantity': 1, 'desc': '將敵方佔領圈的中立化時間縮短一半'},
+      ];
+
+      final batch = FirebaseFirestore.instance.batch();
+      final collection = FirebaseFirestore.instance.collection('users').doc(user!.uid).collection('inventory');
+
+      for (var item in defaultItems) {
+        batch.set(collection.doc(item['itemType'] as String), {
+          ...item,
+          'obtainedFrom': 'initial',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('初始化道具失敗：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isInitializing = false);
+    }
+  }
+
+  void _showUseDialog(BuildContext context, DocumentSnapshot doc) {
+    final item = doc.data() as Map<String, dynamic>;
+    int maxCount = item['quantity'] as int? ?? 0;
+    
     if (maxCount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('該道具數量不足！')),
@@ -51,7 +97,7 @@ class _BackpackBottomSheetState extends State<BackpackBottomSheet> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item['desc'] as String,
+                    item['desc'] ?? '',
                     style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54, fontSize: 13),
                   ),
                   const SizedBox(height: 20),
@@ -92,14 +138,23 @@ class _BackpackBottomSheetState extends State<BackpackBottomSheet> {
                   child: const Text('取消', style: TextStyle(color: Colors.grey)),
                 ),
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     Navigator.pop(dialogContext);
-                    setState(() {
-                      item['count'] = (item['count'] as int) - selectedCount;
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('成功使用了 $selectedCount 個 ${item['name']}！')),
-                    );
+                    try {
+                      await doc.reference.update({
+                        'quantity': FieldValue.increment(-selectedCount),
+                        'updatedAt': FieldValue.serverTimestamp(),
+                      });
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('成功使用了 $selectedCount 個 ${item['name']}！')),
+                      );
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('使用失敗：$e')),
+                      );
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: FactionColors.gold,
@@ -118,6 +173,8 @@ class _BackpackBottomSheetState extends State<BackpackBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
+    if (user == null) return const SizedBox.shrink();
+
     final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
     final textColor = isDarkMode ? FactionColors.textPrimary : Colors.black87;
     final cardBgColor = isDarkMode ? FactionColors.cardBg : Colors.white;
@@ -169,78 +226,102 @@ class _BackpackBottomSheetState extends State<BackpackBottomSheet> {
           ),
           const Divider(height: 1),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  childAspectRatio: 0.85,
-                ),
-                itemCount: _items.length,
-                itemBuilder: (context, index) {
-                  final item = _items[index];
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: cardBgColor,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: borderColor),
-                      boxShadow: isDarkMode ? [] : [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        )
-                      ],
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _inventoryStream,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final docs = snapshot.data?.docs ?? [];
+                // 過濾掉數量小於等於 0 的道具，或者保留也可以（這邊選擇不顯示 0 的道具）
+                final availableDocs = docs.where((d) => ((d.data() as Map<String, dynamic>)['quantity'] ?? 0) > 0).toList();
+
+                if (docs.isEmpty && !_isInitializing) {
+                  // 初始化預設道具
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _initializeDefaultItems();
+                  });
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (availableDocs.isEmpty) {
+                  return const Center(child: Text('背包空空如也', style: TextStyle(color: Colors.grey)));
+                }
+
+                return GridView.builder(
+                  padding: const EdgeInsets.all(16.0),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    childAspectRatio: 0.85,
+                  ),
+                  itemCount: availableDocs.length,
+                  itemBuilder: (context, index) {
+                    final doc = availableDocs[index];
+                    final item = doc.data() as Map<String, dynamic>;
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: cardBgColor,
                         borderRadius: BorderRadius.circular(16),
-                        onTap: () => _showUseDialog(context, item, index),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12.0),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(item['icon'], style: const TextStyle(fontSize: 48)),
-                              const SizedBox(height: 12),
-                              Text(
-                                item['name'],
-                                style: TextStyle(
-                                  color: textColor,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
+                        border: Border.all(color: borderColor),
+                        boxShadow: isDarkMode ? [] : [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          )
+                        ],
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () => _showUseDialog(context, doc),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(item['icon'] ?? '🎁', style: const TextStyle(fontSize: 48)),
+                                const SizedBox(height: 12),
+                                Text(
+                                  item['name'] ?? '未知道具',
+                                  style: TextStyle(
+                                    color: textColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '數量: ${item['count']}',
-                                style: const TextStyle(
-                                  color: FactionColors.gold,
-                                  fontWeight: FontWeight.bold,
+                                const SizedBox(height: 4),
+                                Text(
+                                  '數量: ${item['quantity']}',
+                                  style: const TextStyle(
+                                    color: FactionColors.gold,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                              const Spacer(),
-                              Text(
-                                item['desc'],
-                                style: TextStyle(
-                                  color: isDarkMode ? Colors.white54 : Colors.black54,
-                                  fontSize: 11,
+                                const Spacer(),
+                                Text(
+                                  item['desc'] ?? '',
+                                  style: TextStyle(
+                                    color: isDarkMode ? Colors.white54 : Colors.black54,
+                                    fontSize: 11,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                );
+              },
             ),
           ),
         ],

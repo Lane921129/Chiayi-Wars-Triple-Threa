@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import 'add_mission_screen.dart';
 import 'add_location_screen.dart';
 import 'add_store_screen.dart';
+import '../services/bus_service.dart' as bus_service;
 
 class AdminPanelScreen extends StatelessWidget {
   const AdminPanelScreen({super.key});
@@ -68,6 +69,34 @@ class AdminPanelScreen extends StatelessWidget {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const AddStoreScreen()));
               },
             ),
+          ),
+          const SizedBox(height: 8),
+          Consumer<bus_service.BusService>(
+            builder: (context, busService, child) {
+              return Card(
+                color: isDarkMode ? FactionColors.cardBg : Colors.white,
+                child: ListTile(
+                  leading: busService.isLoading
+                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator())
+                      : const Icon(Icons.directions_bus, color: Colors.blueAccent),
+                  title: Text('同步公車資料至雲端', style: TextStyle(color: isDarkMode ? FactionColors.textPrimary : Colors.black87)),
+                  subtitle: Text('從 TDX 抓取最新路線與軌跡並覆寫至 Firestore', style: TextStyle(color: isDarkMode ? FactionColors.textSecondary : Colors.black54)),
+                  trailing: const Icon(Icons.sync),
+                  onTap: busService.isLoading ? null : () async {
+                    try {
+                      await busService.syncBusDataToFirestore();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('同步公車資料成功！')));
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('同步失敗：$e')));
+                      }
+                    }
+                  },
+                ),
+              );
+            },
           ),
         ],
       ),

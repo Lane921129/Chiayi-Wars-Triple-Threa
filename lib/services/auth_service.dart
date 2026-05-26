@@ -74,6 +74,7 @@ class AuthService {
         'totalRouteDistance': 0,
         'completedMissions': [], // 防止重複解任務
         'createdAt': FieldValue.serverTimestamp(),
+        'searchableEmail': user.email ?? '', // 供好友搜尋使用
       });
 
       await privateRef.set({
@@ -84,10 +85,13 @@ class AuthService {
         'isAdmin': false, // 預設非管理員
       });
     } else {
-      // 舊用戶更新最後登入時間
+      // 舊用戶更新最後登入時間與可搜尋信箱
       await privateRef.update({
         'lastLoginAt': FieldValue.serverTimestamp(),
       });
+      await publicRef.set({
+        'searchableEmail': user.email ?? '',
+      }, SetOptions(merge: true));
     }
   }
   
